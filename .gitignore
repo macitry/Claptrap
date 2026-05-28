@@ -1,0 +1,20 @@
+# Build outputs
+build/
+cmake-build-*/
+*.o
+*.so
+*.so.*
+*.a
+
+# Local tool binaries
+tools/urdf2mjcf
+
+# Generated MuJoCo artifacts
+*.mjb
+
+# Editor and OS files
+.vscode/
+.idea/
+*.swp
+*~
+.DS_Store
