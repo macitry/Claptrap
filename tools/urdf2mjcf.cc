@@ -1,6 +1,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <filesystem>
 
 #include <mujoco/mujoco.h>
 
@@ -23,6 +24,16 @@ int main(int argc, char** argv) {
   const char* input = argv[1];
   const char* output = argv[2];
   char error[4096] = {0};
+
+  std::error_code fs_error;
+  if (!std::filesystem::exists(input, fs_error)) {
+    std::fprintf(stderr, "Input file not found: %s\n", input);
+    std::fprintf(stderr, "Current directory: %s\n",
+                 std::filesystem::current_path().string().c_str());
+    std::fprintf(stderr, "Pass the path relative to the current directory, "
+                         "for example: model/urdf/claptrap.urdf\n");
+    return EXIT_FAILURE;
+  }
 
   // mj_loadXML stores the parsed mjSpec needed later by mj_saveLastXML.
   mjModel* model = mj_loadXML(input, nullptr, error, sizeof(error));

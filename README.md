@@ -4,7 +4,8 @@ Robot model and MuJoCo tooling for the Claptrap project.
 
 ## Layout
 
-- `model/`: project robot models, including `claptrap.urdf`
+- `model/urdf/`: URDF source models
+- `model/xml/`: MJCF files generated from URDF plus MuJoCo overlays and scenes
 - `tools/`: local utilities, including the URDF-to-MJCF converter source and build script
 - `mujoco/`: MuJoCo source tree pinned as a Git submodule
 
@@ -12,6 +13,11 @@ Robot model and MuJoCo tooling for the Claptrap project.
 
 ```bash
 ./tools/build_urdf2mjcf.sh
-LD_LIBRARY_PATH="$PWD/mujoco/build/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
-  ./tools/urdf2mjcf model/claptrap.urdf model/claptrap.xml
+./tools/update_mjcf.sh
+```
+
+Load the basic scene from:
+
+```bash
+model/xml/claptrap_scene.xml
 ```

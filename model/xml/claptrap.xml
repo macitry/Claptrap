@@ -1,0 +1,4 @@
+<mujoco model="claptrap">
+  <include file="claptrap.generated.xml"/>
+  <include file="claptrap_extras.xml"/>
+</mujoco>
