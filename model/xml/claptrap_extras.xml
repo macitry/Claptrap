@@ -4,11 +4,11 @@
            joint="base_link_to_link1"
            gear="1"
            ctrllimited="true"
-           ctrlrange="-1000 1000"/>
+           ctrlrange="-2 2"/>
     <motor name="plane1_to_link2_motor"
            joint="plane1_to_link2"
            gear="1"
            ctrllimited="true"
-           ctrlrange="-1000 1000"/>
+           ctrlrange="-0.2 0.2"/>
   </actuator>
 </mujoco>

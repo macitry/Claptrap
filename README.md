@@ -21,3 +21,7 @@ Load the basic scene from:
 ```bash
 model/xml/claptrap_scene.xml
 ```
+
+`model/xml/claptrap.xml` is the fixed-base robot entry. `model/xml/claptrap_floating.xml`
+adds a free root joint, and `model/xml/claptrap_scene.xml` uses that floating entry so
+gravity can move the robot.

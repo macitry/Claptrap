@@ -1,5 +1,5 @@
 <mujoco model="claptrap_scene">
-  <include file="claptrap.xml"/>
+  <include file="claptrap_floating.xml"/>
 
   <option timestep="0.002" gravity="0 0 -9.81"/>
 

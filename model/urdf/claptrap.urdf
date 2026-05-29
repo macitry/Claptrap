@@ -1,145 +1,143 @@
 <robot name="claptrap">
-    <mujoco>
-        <compiler 
-        balanceinertia="true" 
-        discardvisual="false" />
+  <mujoco>
+    <compiler balanceinertia="true" discardvisual="false"/>
   </mujoco>
-  <link name="base_footprint"></link>
+
+  <!--
+    Link semantics:
+      base_link: structure frame reference
+      plane1/plane2: structure frame plates
+      link1: walking wheel
+      link2: momentum wheel
+  -->
+
+  <link name="base_footprint"/>
+
   <joint name="base_joint" type="fixed">
-    <parent link="base_footprint" />
-    <child link="base_link" />
-    <origin xyz="0 0 0.1" rpy="1.5707963267948963 0 0" />
+    <parent link="base_footprint"/>
+    <child link="base_link"/>
+    <origin xyz="0 0 0.1" rpy="1.5707963267948963 0 0"/>
   </joint>
-  <link name="base_link">
-    <visual>
-      <origin xyz="0 0 0" rpy="0 0 0" />
-      <geometry>
-        <sphere radius="0.001" />
-      </geometry>
-      <material name="base_link-material">
-        <color rgba="0.5457244613615395 0.19806931954941637 0.6938717612856897 1" />
-      </material>
-    </visual>
-    <collision>
-      <origin xyz="0 0 0" rpy="0 0 0" />
-      <geometry>
-        <sphere radius="0.001" />
-      </geometry>
-    </collision>
-    <inertial>
-      <origin xyz="0 0 0" rpy="0 0 0" />
-      <mass value="0.0001" />
-      <inertia ixx="0.33" ixy="0" ixz="0" iyy="0.00004" iyz="0" izz="0.00004" />
-    </inertial>
-  </link>
-  <joint name="base_link_to_link1" type="revolute">
-    <parent link="base_link" />
-    <child link="link1" />
-    <origin xyz="0 0 3.0814879110195774e-33" rpy="0 0 -2.4651903288156613e-32" />
-    <axis xyz="0 0 1"/>
-    <limit effort="1000.0" lower="-1" upper="1" velocity="0.5"/>  </joint>
-  <link name="link1">
-    <visual>
-      <origin xyz="0 0 0" rpy="0 0 0" />
-      <geometry>
-        <cylinder radius="0.09" length="0.033" />
-      </geometry>
-      <material name="link1-material">
-        <color rgba="0.24228112245478564 0.02028856305209031 0.2917706498067337 1" />
-      </material>
-    </visual>
-    <collision>
-      <origin xyz="0 0 0" rpy="0 0 0" />
-      <geometry>
-        <cylinder radius="0.09" length="0.033" />
-      </geometry>
-    </collision>
-    <inertial>
-      <origin xyz="0 0 0" rpy="0 0 0" />
-      <mass value="1.54" />
-      <inertia ixx="0.5133333333333333" ixy="0" ixz="0" iyy="0.77" iyz="0" izz="0.5133333333333333" />
-    </inertial>
-  </link>
-  <joint name="link1_to_plane1" type="fixed">
-    <parent link="link1" />
-    <child link="plane1" />
-    <origin xyz="0 0.1 0" rpy="1.2154326714572541e-63 0 4.930380657631324e-32" />
+
+  <link name="base_link"/>
+
+  <joint name="base_link_to_plane1" type="fixed">
+    <parent link="base_link"/>
+    <child link="plane1"/>
+    <origin xyz="0 0.1 0" rpy="0 0 0"/>
   </joint>
+
   <link name="plane1">
     <visual>
-      <origin xyz="0 0 0" rpy="0 0 0" />
+      <origin xyz="0 0 0" rpy="0 0 0"/>
       <geometry>
-        <box size="0.15 0.008 0.15" />
+        <box size="0.15 0.008 0.15"/>
       </geometry>
-      <material name="plane1-material">
-        <color rgba="0.4910208498384856 0.3049873140591091 0.6653872982754769 1" />
+      <material name="frame-material">
+        <color rgba="0.4910208498384856 0.3049873140591091 0.6653872982754769 1"/>
       </material>
     </visual>
     <collision>
-      <origin xyz="0 0 0" rpy="0 0 0" />
+      <origin xyz="0 0 0" rpy="0 0 0"/>
       <geometry>
-        <box size="0.15 0.008 0.15" />
+        <box size="0.15 0.008 0.15"/>
       </geometry>
     </collision>
     <inertial>
-      <origin xyz="0 0 0" rpy="0 0 0" />
-      <mass value="0.08" />
-      <inertia ixx="0.013333333333333332" ixy="0" ixz="0" iyy="0.013333333333333332" iyz="0" izz="0.013333333333333332" />
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <mass value="0.08"/>
+      <inertia ixx="0.0001504" ixy="0" ixz="0" iyy="0.0003" iyz="0" izz="0.0001504"/>
     </inertial>
   </link>
-  <joint name="plane1_to_link2" type="revolute">
-    <parent link="plane1" />
-    <child link="link2" />
-    <origin xyz="0 0.06 0" rpy="2.0344439357957027 -1.5707963267948966 1.1071487177940904" />
-    <axis xyz="0 0 1"/>
-    <limit effort="1000.0" lower="-1" upper="1" velocity="0.5"/>  </joint>
-  <link name="link2">
-    <visual>
-      <origin xyz="0 0 0" rpy="0 0 0" />
-      <geometry>
-        <cylinder radius="0.05" length="0.008" />
-      </geometry>
-      <material name="link2-material">
-        <color rgba="0.1912016827303171 0.5711248294565854 0.5583403896257968 1" />
-      </material>
-    </visual>
-    <collision>
-      <origin xyz="0 0 0" rpy="0 0 0" />
-      <geometry>
-        <cylinder radius="0.05" length="0.008" />
-      </geometry>
-    </collision>
-    <inertial>
-      <origin xyz="0 0 0" rpy="0 0 0" />
-      <mass value="0.08" />
-      <inertia ixx="0.026666666666666665" ixy="0" ixz="0" iyy="0.04" iyz="0" izz="0.026666666666666665" />
-    </inertial>
-  </link>
+
   <joint name="plane1_to_plane2" type="fixed">
-    <parent link="plane1" />
-    <child link="plane2" />
-    <origin xyz="4.9303806576313234e-33 0.12 0" rpy="6.07716335728627e-64 0 1.4981364335015033e-95" />
+    <parent link="plane1"/>
+    <child link="plane2"/>
+    <origin xyz="0 0.12 0" rpy="0 0 0"/>
   </joint>
+
   <link name="plane2">
     <visual>
-      <origin xyz="0 0 0" rpy="0 0 0" />
+      <origin xyz="0 0 0" rpy="0 0 0"/>
       <geometry>
-        <box size="0.18 0.008 0.18" />
+        <box size="0.18 0.008 0.18"/>
       </geometry>
-      <material name="plane2-material">
-        <color rgba="0.4910208498384856 0.3049873140591091 0.6653872982754769 1" />
+      <material name="frame-material">
+        <color rgba="0.4910208498384856 0.3049873140591091 0.6653872982754769 1"/>
       </material>
     </visual>
     <collision>
-      <origin xyz="0 0 0" rpy="0 0 0" />
+      <origin xyz="0 0 0" rpy="0 0 0"/>
       <geometry>
-        <box size="0.18 0.008 0.18" />
+        <box size="0.18 0.008 0.18"/>
       </geometry>
     </collision>
     <inertial>
-      <origin xyz="0 0 0" rpy="0 0 0" />
-      <mass value="0.08" />
-      <inertia ixx="0.013333333333333332" ixy="0" ixz="0" iyy="0.013333333333333332" iyz="0" izz="0.013333333333333332" />
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <mass value="0.08"/>
+      <inertia ixx="0.0002164" ixy="0" ixz="0" iyy="0.000432" iyz="0" izz="0.0002164"/>
+    </inertial>
+  </link>
+
+  <joint name="base_link_to_link1" type="continuous">
+    <parent link="base_link"/>
+    <child link="link1"/>
+    <origin xyz="0 0 0" rpy="0 0 0"/>
+    <axis xyz="0 0 1"/>
+    <limit effort="1000.0" velocity="30"/>
+  </joint>
+
+  <link name="link1">
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <cylinder radius="0.09" length="0.033"/>
+      </geometry>
+      <material name="walking-wheel-material">
+        <color rgba="0.24228112245478564 0.02028856305209031 0.2917706498067337 1"/>
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <cylinder radius="0.09" length="0.033"/>
+      </geometry>
+    </collision>
+    <inertial>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <mass value="1.54"/>
+      <inertia ixx="0.003258" ixy="0" ixz="0" iyy="0.003258" iyz="0" izz="0.006237"/>
+    </inertial>
+  </link>
+
+  <joint name="plane1_to_link2" type="continuous">
+    <parent link="plane1"/>
+    <child link="link2"/>
+    <origin xyz="0 0.06 0" rpy="2.0344439357957027 -1.5707963267948966 1.1071487177940904"/>
+    <axis xyz="0 0 1"/>
+    <limit effort="1000.0" velocity="100"/>
+  </joint>
+
+  <link name="link2">
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <cylinder radius="0.05" length="0.008"/>
+      </geometry>
+      <material name="momentum-wheel-material">
+        <color rgba="0.1912016827303171 0.5711248294565854 0.5583403896257968 1"/>
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <cylinder radius="0.05" length="0.008"/>
+      </geometry>
+    </collision>
+    <inertial>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <mass value="0.08"/>
+      <inertia ixx="0.00005043" ixy="0" ixz="0" iyy="0.00005043" iyz="0" izz="0.0001"/>
     </inertial>
   </link>
 </robot>
