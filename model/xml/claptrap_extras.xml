@@ -13,44 +13,44 @@
   </actuator>
 
   <sensor>
-    <framequat name="imu_front_left_orientation"
+    <framequat name="imu_plane1_diag_a_orientation"
                objtype="body"
-               objname="imu_front_left"/>
-    <frameangvel name="imu_front_left_angular_velocity"
+               objname="imu_plane1_diag_a"/>
+    <frameangvel name="imu_plane1_diag_a_angular_velocity"
                  objtype="body"
-                 objname="imu_front_left"/>
-    <framelinacc name="imu_front_left_linear_acceleration"
+                 objname="imu_plane1_diag_a"/>
+    <framelinacc name="imu_plane1_diag_a_linear_acceleration"
                  objtype="body"
-                 objname="imu_front_left"/>
+                 objname="imu_plane1_diag_a"/>
 
-    <framequat name="imu_front_right_orientation"
+    <framequat name="imu_plane1_diag_b_orientation"
                objtype="body"
-               objname="imu_front_right"/>
-    <frameangvel name="imu_front_right_angular_velocity"
+               objname="imu_plane1_diag_b"/>
+    <frameangvel name="imu_plane1_diag_b_angular_velocity"
                  objtype="body"
-                 objname="imu_front_right"/>
-    <framelinacc name="imu_front_right_linear_acceleration"
+                 objname="imu_plane1_diag_b"/>
+    <framelinacc name="imu_plane1_diag_b_linear_acceleration"
                  objtype="body"
-                 objname="imu_front_right"/>
+                 objname="imu_plane1_diag_b"/>
 
-    <framequat name="imu_rear_left_orientation"
+    <framequat name="imu_plane2_diag_a_orientation"
                objtype="body"
-               objname="imu_rear_left"/>
-    <frameangvel name="imu_rear_left_angular_velocity"
+               objname="imu_plane2_diag_a"/>
+    <frameangvel name="imu_plane2_diag_a_angular_velocity"
                  objtype="body"
-                 objname="imu_rear_left"/>
-    <framelinacc name="imu_rear_left_linear_acceleration"
+                 objname="imu_plane2_diag_a"/>
+    <framelinacc name="imu_plane2_diag_a_linear_acceleration"
                  objtype="body"
-                 objname="imu_rear_left"/>
+                 objname="imu_plane2_diag_a"/>
 
-    <framequat name="imu_rear_right_orientation"
+    <framequat name="imu_plane2_diag_b_orientation"
                objtype="body"
-               objname="imu_rear_right"/>
-    <frameangvel name="imu_rear_right_angular_velocity"
+               objname="imu_plane2_diag_b"/>
+    <frameangvel name="imu_plane2_diag_b_angular_velocity"
                  objtype="body"
-                 objname="imu_rear_right"/>
-    <framelinacc name="imu_rear_right_linear_acceleration"
+                 objname="imu_plane2_diag_b"/>
+    <framelinacc name="imu_plane2_diag_b_linear_acceleration"
                  objtype="body"
-                 objname="imu_rear_right"/>
+                 objname="imu_plane2_diag_b"/>
   </sensor>
 </mujoco>

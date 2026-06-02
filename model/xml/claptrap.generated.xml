@@ -8,22 +8,12 @@
           <inertial pos="0 0 0" quat="0.707107 0 0 0.707107" mass="0.08" diaginertia="0.0003 0.0001504 0.0001504"/>
           <geom size="0.075 0.004 0.075" type="box" contype="0" conaffinity="0" group="1" density="0" rgba="0.491021 0.304987 0.665387 1"/>
           <geom size="0.075 0.004 0.075" type="box" rgba="0.491021 0.304987 0.665387 1"/>
-          <body name="imu_front_left" pos="0.06 0.008 0.06">
+          <body name="imu_plane1_diag_a" pos="0.06 0.008 0.06">
             <inertial pos="0 0 0" quat="0.707107 0 0 0.707107" mass="0.005" diaginertia="1.225e-07 1.225e-07 1.225e-07"/>
             <geom size="0.0075 0.004 0.0075" type="box" contype="0" conaffinity="0" group="1" density="0" rgba="0.95 0.82 0.18 1"/>
             <geom size="0.0075 0.004 0.0075" type="box" rgba="0.95 0.82 0.18 1"/>
           </body>
-          <body name="imu_front_right" pos="0.06 0.008 -0.06">
-            <inertial pos="0 0 0" quat="0.707107 0 0 0.707107" mass="0.005" diaginertia="1.225e-07 1.225e-07 1.225e-07"/>
-            <geom size="0.0075 0.004 0.0075" type="box" contype="0" conaffinity="0" group="1" density="0" rgba="0.95 0.82 0.18 1"/>
-            <geom size="0.0075 0.004 0.0075" type="box" rgba="0.95 0.82 0.18 1"/>
-          </body>
-          <body name="imu_rear_left" pos="-0.06 0.008 0.06">
-            <inertial pos="0 0 0" quat="0.707107 0 0 0.707107" mass="0.005" diaginertia="1.225e-07 1.225e-07 1.225e-07"/>
-            <geom size="0.0075 0.004 0.0075" type="box" contype="0" conaffinity="0" group="1" density="0" rgba="0.95 0.82 0.18 1"/>
-            <geom size="0.0075 0.004 0.0075" type="box" rgba="0.95 0.82 0.18 1"/>
-          </body>
-          <body name="imu_rear_right" pos="-0.06 0.008 -0.06">
+          <body name="imu_plane1_diag_b" pos="-0.06 0.008 -0.06">
             <inertial pos="0 0 0" quat="0.707107 0 0 0.707107" mass="0.005" diaginertia="1.225e-07 1.225e-07 1.225e-07"/>
             <geom size="0.0075 0.004 0.0075" type="box" contype="0" conaffinity="0" group="1" density="0" rgba="0.95 0.82 0.18 1"/>
             <geom size="0.0075 0.004 0.0075" type="box" rgba="0.95 0.82 0.18 1"/>
@@ -32,6 +22,16 @@
             <inertial pos="0 0 0" quat="0.707107 0 0 0.707107" mass="0.08" diaginertia="0.000432 0.0002164 0.0002164"/>
             <geom size="0.09 0.004 0.09" type="box" contype="0" conaffinity="0" group="1" density="0" rgba="0.491021 0.304987 0.665387 1"/>
             <geom size="0.09 0.004 0.09" type="box" rgba="0.491021 0.304987 0.665387 1"/>
+            <body name="imu_plane2_diag_a" pos="0.075 0.008 0.075">
+              <inertial pos="0 0 0" quat="0.707107 0 0 0.707107" mass="0.005" diaginertia="1.225e-07 1.225e-07 1.225e-07"/>
+              <geom size="0.0075 0.004 0.0075" type="box" contype="0" conaffinity="0" group="1" density="0" rgba="0.95 0.82 0.18 1"/>
+              <geom size="0.0075 0.004 0.0075" type="box" rgba="0.95 0.82 0.18 1"/>
+            </body>
+            <body name="imu_plane2_diag_b" pos="-0.075 0.008 -0.075">
+              <inertial pos="0 0 0" quat="0.707107 0 0 0.707107" mass="0.005" diaginertia="1.225e-07 1.225e-07 1.225e-07"/>
+              <geom size="0.0075 0.004 0.0075" type="box" contype="0" conaffinity="0" group="1" density="0" rgba="0.95 0.82 0.18 1"/>
+              <geom size="0.0075 0.004 0.0075" type="box" rgba="0.95 0.82 0.18 1"/>
+            </body>
           </body>
           <body name="link2" pos="0 0.06 0" quat="0 0.707107 0 0.707107">
             <inertial pos="0 0 0" quat="0.5 0.5 -0.5 0.5" mass="0.08" diaginertia="0.0001 5.043e-05 5.043e-05"/>
