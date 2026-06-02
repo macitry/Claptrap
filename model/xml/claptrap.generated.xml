@@ -2,21 +2,51 @@
   <compiler angle="radian"/>
 
   <worldbody>
-    <geom size="0.075 0.004 0.075" pos="0 0 0.2" quat="0.707107 0.707107 0 0" type="box" contype="0" conaffinity="0" group="1" density="0" rgba="0.491021 0.304987 0.665387 1"/>
-    <geom size="0.075 0.004 0.075" pos="0 0 0.2" quat="0.707107 0.707107 0 0" type="box" rgba="0.491021 0.304987 0.665387 1"/>
-    <geom size="0.09 0.004 0.09" pos="0 0 0.32" quat="0.707107 0.707107 0 0" type="box" contype="0" conaffinity="0" group="1" density="0" rgba="0.491021 0.304987 0.665387 1"/>
-    <geom size="0.09 0.004 0.09" pos="0 0 0.32" quat="0.707107 0.707107 0 0" type="box" rgba="0.491021 0.304987 0.665387 1"/>
-    <body name="link2" pos="0 0 0.26" quat="-0.5 0.5 -0.5 0.5">
-      <inertial pos="0 0 0" quat="0.5 0.5 -0.5 0.5" mass="0.08" diaginertia="0.0001 5.043e-05 5.043e-05"/>
-      <joint name="plane1_to_link2" pos="0 0 0" axis="0 0 1" actuatorfrcrange="-1000 1000"/>
-      <geom size="0.05 0.004" type="cylinder" contype="0" conaffinity="0" group="1" density="0" rgba="0.191202 0.571125 0.55834 1"/>
-      <geom size="0.05 0.004" type="cylinder" rgba="0.191202 0.571125 0.55834 1"/>
-    </body>
-    <body name="link1" pos="0 0 0.1" quat="0.707107 0.707107 0 0">
-      <inertial pos="0 0 0" quat="0.5 0.5 -0.5 0.5" mass="1.54" diaginertia="0.006237 0.003258 0.003258"/>
-      <joint name="base_link_to_link1" pos="0 0 0" axis="0 0 1" actuatorfrcrange="-1000 1000"/>
-      <geom size="0.09 0.0165" type="cylinder" contype="0" conaffinity="0" group="1" density="0" rgba="0.242281 0.0202886 0.291771 1"/>
-      <geom size="0.09 0.0165" type="cylinder" rgba="0.242281 0.0202886 0.291771 1"/>
+    <body name="base_footprint">
+      <body name="base_link" pos="0 0 0.1" quat="0.707107 0.707107 0 0">
+        <body name="plane1" pos="0 0.1 0">
+          <inertial pos="0 0 0" quat="0.707107 0 0 0.707107" mass="0.08" diaginertia="0.0003 0.0001504 0.0001504"/>
+          <geom size="0.075 0.004 0.075" type="box" contype="0" conaffinity="0" group="1" density="0" rgba="0.491021 0.304987 0.665387 1"/>
+          <geom size="0.075 0.004 0.075" type="box" rgba="0.491021 0.304987 0.665387 1"/>
+          <body name="imu_front_left" pos="0.06 0.008 0.06">
+            <inertial pos="0 0 0" quat="0.707107 0 0 0.707107" mass="0.005" diaginertia="1.225e-07 1.225e-07 1.225e-07"/>
+            <geom size="0.0075 0.004 0.0075" type="box" contype="0" conaffinity="0" group="1" density="0" rgba="0.95 0.82 0.18 1"/>
+            <geom size="0.0075 0.004 0.0075" type="box" rgba="0.95 0.82 0.18 1"/>
+          </body>
+          <body name="imu_front_right" pos="0.06 0.008 -0.06">
+            <inertial pos="0 0 0" quat="0.707107 0 0 0.707107" mass="0.005" diaginertia="1.225e-07 1.225e-07 1.225e-07"/>
+            <geom size="0.0075 0.004 0.0075" type="box" contype="0" conaffinity="0" group="1" density="0" rgba="0.95 0.82 0.18 1"/>
+            <geom size="0.0075 0.004 0.0075" type="box" rgba="0.95 0.82 0.18 1"/>
+          </body>
+          <body name="imu_rear_left" pos="-0.06 0.008 0.06">
+            <inertial pos="0 0 0" quat="0.707107 0 0 0.707107" mass="0.005" diaginertia="1.225e-07 1.225e-07 1.225e-07"/>
+            <geom size="0.0075 0.004 0.0075" type="box" contype="0" conaffinity="0" group="1" density="0" rgba="0.95 0.82 0.18 1"/>
+            <geom size="0.0075 0.004 0.0075" type="box" rgba="0.95 0.82 0.18 1"/>
+          </body>
+          <body name="imu_rear_right" pos="-0.06 0.008 -0.06">
+            <inertial pos="0 0 0" quat="0.707107 0 0 0.707107" mass="0.005" diaginertia="1.225e-07 1.225e-07 1.225e-07"/>
+            <geom size="0.0075 0.004 0.0075" type="box" contype="0" conaffinity="0" group="1" density="0" rgba="0.95 0.82 0.18 1"/>
+            <geom size="0.0075 0.004 0.0075" type="box" rgba="0.95 0.82 0.18 1"/>
+          </body>
+          <body name="plane2" pos="0 0.12 0">
+            <inertial pos="0 0 0" quat="0.707107 0 0 0.707107" mass="0.08" diaginertia="0.000432 0.0002164 0.0002164"/>
+            <geom size="0.09 0.004 0.09" type="box" contype="0" conaffinity="0" group="1" density="0" rgba="0.491021 0.304987 0.665387 1"/>
+            <geom size="0.09 0.004 0.09" type="box" rgba="0.491021 0.304987 0.665387 1"/>
+          </body>
+          <body name="link2" pos="0 0.06 0" quat="0 0.707107 0 0.707107">
+            <inertial pos="0 0 0" quat="0.5 0.5 -0.5 0.5" mass="0.08" diaginertia="0.0001 5.043e-05 5.043e-05"/>
+            <joint name="plane1_to_link2" pos="0 0 0" axis="0 0 1" actuatorfrcrange="-1000 1000"/>
+            <geom size="0.05 0.004" type="cylinder" contype="0" conaffinity="0" group="1" density="0" rgba="0.191202 0.571125 0.55834 1"/>
+            <geom size="0.05 0.004" type="cylinder" rgba="0.191202 0.571125 0.55834 1"/>
+          </body>
+        </body>
+        <body name="link1">
+          <inertial pos="0 0 0" quat="0.5 0.5 -0.5 0.5" mass="1.54" diaginertia="0.006237 0.003258 0.003258"/>
+          <joint name="base_link_to_link1" pos="0 0 0" axis="0 0 1" actuatorfrcrange="-1000 1000"/>
+          <geom size="0.09 0.0165" type="cylinder" contype="0" conaffinity="0" group="1" density="0" rgba="0.242281 0.0202886 0.291771 1"/>
+          <geom size="0.09 0.0165" type="cylinder" rgba="0.242281 0.0202886 0.291771 1"/>
+        </body>
+      </body>
     </body>
   </worldbody>
 </mujoco>

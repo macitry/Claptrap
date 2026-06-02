@@ -4,11 +4,53 @@
            joint="base_link_to_link1"
            gear="1"
            ctrllimited="true"
-           ctrlrange="-2 2"/>
+           ctrlrange="-6 6"/>
     <motor name="plane1_to_link2_motor"
            joint="plane1_to_link2"
            gear="1"
            ctrllimited="true"
-           ctrlrange="-0.2 0.2"/>
+           ctrlrange="-3 3"/>
   </actuator>
+
+  <sensor>
+    <framequat name="imu_front_left_orientation"
+               objtype="body"
+               objname="imu_front_left"/>
+    <frameangvel name="imu_front_left_angular_velocity"
+                 objtype="body"
+                 objname="imu_front_left"/>
+    <framelinacc name="imu_front_left_linear_acceleration"
+                 objtype="body"
+                 objname="imu_front_left"/>
+
+    <framequat name="imu_front_right_orientation"
+               objtype="body"
+               objname="imu_front_right"/>
+    <frameangvel name="imu_front_right_angular_velocity"
+                 objtype="body"
+                 objname="imu_front_right"/>
+    <framelinacc name="imu_front_right_linear_acceleration"
+                 objtype="body"
+                 objname="imu_front_right"/>
+
+    <framequat name="imu_rear_left_orientation"
+               objtype="body"
+               objname="imu_rear_left"/>
+    <frameangvel name="imu_rear_left_angular_velocity"
+                 objtype="body"
+                 objname="imu_rear_left"/>
+    <framelinacc name="imu_rear_left_linear_acceleration"
+                 objtype="body"
+                 objname="imu_rear_left"/>
+
+    <framequat name="imu_rear_right_orientation"
+               objtype="body"
+               objname="imu_rear_right"/>
+    <frameangvel name="imu_rear_right_angular_velocity"
+                 objtype="body"
+                 objname="imu_rear_right"/>
+    <framelinacc name="imu_rear_right_linear_acceleration"
+                 objtype="body"
+                 objname="imu_rear_right"/>
+  </sensor>
 </mujoco>
