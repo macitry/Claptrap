@@ -1,0 +1,37 @@
+{
+  "shared_memory_name": "robot_mujoco_io",
+  "state_fields": [
+    {
+      "name": "qpos",
+      "dtype": "float64",
+      "size": "nq"
+    },
+    {
+      "name": "qvel",
+      "dtype": "float64",
+      "size": "nv"
+    },
+    {
+      "name": "sensordata",
+      "dtype": "float64",
+      "size": "nsensordata"
+    },
+    {
+      "name": "ctrl",
+      "dtype": "float64",
+      "size": "nu"
+    },
+    {
+      "name": "actuator_force",
+      "dtype": "float64",
+      "size": "nu"
+    }
+  ],
+  "command_fields": [
+    {
+      "name": "torque",
+      "dtype": "float64",
+      "size": "nu"
+    }
+  ]
+}

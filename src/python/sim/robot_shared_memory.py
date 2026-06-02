@@ -1,30 +1,33 @@
-"""Shared-memory robot I/O for the simulator.
-
-The simulator owns one shared-memory block.  External controllers attach to the
-same block, read the latest state, and write torque commands.  The state and
-command metadata live in separate headers so the simulator and controller never
-overwrite each other's sequence counters.
-"""
+"""Shared-memory robot I/O for the simulator."""
 
 from __future__ import annotations
 
+import hashlib
 import inspect
+import json
 import struct
 import time
 from dataclasses import dataclass, replace
 from multiprocessing import resource_tracker
 from multiprocessing import shared_memory
-from typing import Sequence
+from pathlib import Path
+from typing import Any, Sequence
 
 
+DEFAULT_CONFIG_PATH = (
+    Path(__file__).resolve().parents[2]
+    / "config"
+    / "robot_shared_memory_config.json"
+)
 DEFAULT_SHM_NAME = "robot_mujoco_io"
 COMMAND_MODE_TORQUE = 0
 
 MAGIC = b"ROBOTIO\0"
-VERSION = 1
+VERSION = 2
 DOUBLE_SIZE = 8
+SUPPORTED_DTYPE = "float64"
 
-COMMON_HEADER_STRUCT = struct.Struct("<8sIIQIIII")
+COMMON_HEADER_STRUCT = struct.Struct("<8sIIQIIIIQ")
 STATE_HEADER_STRUCT = struct.Struct("<QIIddd")
 COMMAND_HEADER_STRUCT = struct.Struct("<QIId")
 
@@ -40,8 +43,103 @@ OWNED_SHM_NAMES: set[str] = set()
 
 
 @dataclass(frozen=True)
+class ModelDimensions:
+    nq: int
+    nv: int
+    nu: int
+    nsensordata: int
+
+    def as_dict(self) -> dict[str, int]:
+        return {
+            "nq": self.nq,
+            "nv": self.nv,
+            "nu": self.nu,
+            "nsensordata": self.nsensordata,
+        }
+
+
+@dataclass(frozen=True)
+class FieldSpec:
+    name: str
+    dtype: str
+    size: int | str
+
+    @classmethod
+    def from_json(cls, raw: dict[str, Any]) -> "FieldSpec":
+        name = raw.get("name")
+        dtype = raw.get("dtype", SUPPORTED_DTYPE)
+        size = raw.get("size")
+
+        if not isinstance(name, str) or not name:
+            raise ValueError("shared-memory field requires a non-empty string name")
+        if dtype != SUPPORTED_DTYPE:
+            raise ValueError(f"unsupported dtype for field {name!r}: {dtype!r}")
+        if not isinstance(size, (int, str)):
+            raise ValueError(f"field {name!r} size must be an integer or dimension key")
+
+        return cls(name=name, dtype=dtype, size=size)
+
+    def resolved_size(self, dimensions: ModelDimensions) -> int:
+        if isinstance(self.size, int):
+            size = self.size
+        else:
+            values = dimensions.as_dict()
+            if self.size not in values:
+                raise ValueError(
+                    f"field {self.name!r} references unknown dimension {self.size!r}"
+                )
+            size = values[self.size]
+
+        if size < 0:
+            raise ValueError(f"field {self.name!r} size must be non-negative")
+        return size
+
+
+@dataclass(frozen=True)
+class SharedMemoryConfig:
+    shared_memory_name: str
+    state_fields: tuple[FieldSpec, ...]
+    command_fields: tuple[FieldSpec, ...]
+    fingerprint: int
+
+    @classmethod
+    def load(cls, path: Path | None = None) -> "SharedMemoryConfig":
+        config_path = DEFAULT_CONFIG_PATH if path is None else Path(path)
+        raw = json.loads(config_path.read_text(encoding="utf-8"))
+
+        shared_memory_name = raw.get("shared_memory_name", DEFAULT_SHM_NAME)
+        if not isinstance(shared_memory_name, str) or not shared_memory_name:
+            raise ValueError("shared_memory_name must be a non-empty string")
+
+        state_fields = _load_field_specs(raw, "state_fields")
+        command_fields = _load_field_specs(raw, "command_fields")
+        _validate_unique_names(state_fields, "state_fields")
+        _validate_unique_names(command_fields, "command_fields")
+
+        normalized = {
+            "shared_memory_name": shared_memory_name,
+            "state_fields": [field.__dict__ for field in state_fields],
+            "command_fields": [field.__dict__ for field in command_fields],
+        }
+        digest = hashlib.sha256(
+            json.dumps(normalized, sort_keys=True, separators=(",", ":")).encode(
+                "utf-8"
+            )
+        ).digest()
+        fingerprint = int.from_bytes(digest[:8], "little")
+
+        return cls(
+            shared_memory_name=shared_memory_name,
+            state_fields=tuple(state_fields),
+            command_fields=tuple(command_fields),
+            fingerprint=fingerprint,
+        )
+
+
+@dataclass(frozen=True)
 class SharedMemoryHeader:
     total_size: int
+    config_fingerprint: int
     nq: int
     nv: int
     nu: int
@@ -60,10 +158,8 @@ class SharedMemoryHeader:
 @dataclass(frozen=True)
 class _CommonHeader:
     total_size: int
-    nq: int
-    nv: int
-    nu: int
-    nsensordata: int
+    config_fingerprint: int
+    dimensions: ModelDimensions
 
 
 @dataclass(frozen=True)
@@ -84,70 +180,45 @@ class _CommandHeader:
 
 
 @dataclass(frozen=True)
+class FieldLayout:
+    name: str
+    offset: int
+    size: int
+
+
+@dataclass(frozen=True)
 class SharedMemoryLayout:
-    nq: int
-    nv: int
-    nu: int
-    nsensordata: int
-    qpos_offset: int
-    qvel_offset: int
-    sensordata_offset: int
-    ctrl_offset: int
-    actuator_force_offset: int
-    command_torque_offset: int
+    dimensions: ModelDimensions
+    state_fields: dict[str, FieldLayout]
+    command_fields: dict[str, FieldLayout]
     total_size: int
 
     @classmethod
-    def from_dimensions(
+    def from_config(
         cls,
-        *,
-        nq: int,
-        nv: int,
-        nu: int,
-        nsensordata: int,
+        config: SharedMemoryConfig,
+        dimensions: ModelDimensions,
     ) -> "SharedMemoryLayout":
         offset = ARRAYS_OFFSET
-        qpos_offset = offset
-        offset += nq * DOUBLE_SIZE
-        qvel_offset = offset
-        offset += nv * DOUBLE_SIZE
-        sensordata_offset = offset
-        offset += nsensordata * DOUBLE_SIZE
-        ctrl_offset = offset
-        offset += nu * DOUBLE_SIZE
-        actuator_force_offset = offset
-        offset += nu * DOUBLE_SIZE
-        command_torque_offset = offset
-        offset += nu * DOUBLE_SIZE
+        state_fields: dict[str, FieldLayout] = {}
+        command_fields: dict[str, FieldLayout] = {}
+
+        for field in config.state_fields:
+            size = field.resolved_size(dimensions)
+            state_fields[field.name] = FieldLayout(field.name, offset, size)
+            offset += size * DOUBLE_SIZE
+
+        for field in config.command_fields:
+            size = field.resolved_size(dimensions)
+            command_fields[field.name] = FieldLayout(field.name, offset, size)
+            offset += size * DOUBLE_SIZE
 
         return cls(
-            nq=nq,
-            nv=nv,
-            nu=nu,
-            nsensordata=nsensordata,
-            qpos_offset=qpos_offset,
-            qvel_offset=qvel_offset,
-            sensordata_offset=sensordata_offset,
-            ctrl_offset=ctrl_offset,
-            actuator_force_offset=actuator_force_offset,
-            command_torque_offset=command_torque_offset,
+            dimensions=dimensions,
+            state_fields=state_fields,
+            command_fields=command_fields,
             total_size=offset,
         )
-
-    @classmethod
-    def from_header(cls, header: SharedMemoryHeader) -> "SharedMemoryLayout":
-        layout = cls.from_dimensions(
-            nq=header.nq,
-            nv=header.nv,
-            nu=header.nu,
-            nsensordata=header.nsensordata,
-        )
-        if layout.total_size != header.total_size:
-            raise ValueError(
-                "Shared-memory size mismatch: "
-                f"header={header.total_size}, computed={layout.total_size}"
-            )
-        return layout
 
 
 @dataclass(frozen=True)
@@ -157,11 +228,13 @@ class RobotState:
     sim_time: float
     timestep: float
     wall_time: float
-    qpos: list[float]
-    qvel: list[float]
-    sensordata: list[float]
-    ctrl: list[float]
-    actuator_force: list[float]
+    fields: dict[str, list[float]]
+
+    def __getattr__(self, name: str) -> list[float]:
+        try:
+            return self.fields[name]
+        except KeyError as exc:
+            raise AttributeError(name) from exc
 
 
 @dataclass(frozen=True)
@@ -170,7 +243,27 @@ class RobotCommand:
     enabled: bool
     mode: int
     wall_time: float
-    torque: list[float]
+    fields: dict[str, list[float]]
+
+    def __getattr__(self, name: str) -> list[float]:
+        try:
+            return self.fields[name]
+        except KeyError as exc:
+            raise AttributeError(name) from exc
+
+
+def _load_field_specs(raw: dict[str, Any], key: str) -> tuple[FieldSpec, ...]:
+    fields = raw.get(key)
+    if not isinstance(fields, list):
+        raise ValueError(f"{key} must be a list")
+    return tuple(FieldSpec.from_json(field) for field in fields)
+
+
+def _validate_unique_names(fields: Sequence[FieldSpec], label: str) -> None:
+    names = [field.name for field in fields]
+    duplicates = sorted({name for name in names if names.count(name) > 1})
+    if duplicates:
+        raise ValueError(f"{label} has duplicate field names: {', '.join(duplicates)}")
 
 
 def _open_shared_memory(
@@ -189,9 +282,6 @@ def _open_shared_memory(
     if create:
         OWNED_SHM_NAMES.add(shm._name)
 
-    # Python < 3.13 tracks attached shared memory in every independent process.
-    # Unregister non-owner attachments so a short-lived client does not unlink
-    # the simulator-owned block when it exits.
     if (
         not create
         and unregister_attached
@@ -206,8 +296,13 @@ def _open_shared_memory(
     return shm
 
 
-def _as_float_list(values: Sequence[float], expected: int, label: str) -> list[float]:
-    result = [float(value) for value in values]
+def _as_float_list(values: object, expected: int, label: str) -> list[float]:
+    if hasattr(values, "tolist"):
+        values = values.tolist()
+    if isinstance(values, (int, float)):
+        result = [float(values)]
+    else:
+        result = [float(value) for value in values]
     if len(result) != expected:
         raise ValueError(f"{label} must contain {expected} values, got {len(result)}")
     return result
@@ -227,12 +322,14 @@ class RobotSharedMemory:
         self,
         shm: shared_memory.SharedMemory,
         layout: SharedMemoryLayout,
+        config: SharedMemoryConfig,
         *,
         owner: bool,
         unlink_on_close: bool,
     ) -> None:
         self._shm = shm
         self.layout = layout
+        self.config = config
         self.owner = owner
         self.unlink_on_close = unlink_on_close
 
@@ -244,25 +341,30 @@ class RobotSharedMemory:
     def create(
         cls,
         *,
-        name: str = DEFAULT_SHM_NAME,
+        name: str | None = None,
         nq: int,
         nv: int,
         nu: int,
         nsensordata: int,
         timestep: float,
+        config_path: Path | None = None,
+        config: SharedMemoryConfig | None = None,
         unlink_existing: bool = True,
         unlink_on_close: bool = True,
     ) -> "RobotSharedMemory":
-        layout = SharedMemoryLayout.from_dimensions(
+        config = SharedMemoryConfig.load(config_path) if config is None else config
+        dimensions = ModelDimensions(
             nq=nq,
             nv=nv,
             nu=nu,
             nsensordata=nsensordata,
         )
+        layout = SharedMemoryLayout.from_config(config, dimensions)
+        shm_name = config.shared_memory_name if name is None else name
 
         try:
             shm = _open_shared_memory(
-                name=name,
+                name=shm_name,
                 create=True,
                 size=layout.total_size,
                 track=True,
@@ -271,7 +373,7 @@ class RobotSharedMemory:
             if not unlink_existing:
                 raise
             old_shm = _open_shared_memory(
-                name=name,
+                name=shm_name,
                 create=False,
                 track=False,
                 unregister_attached=False,
@@ -281,21 +383,25 @@ class RobotSharedMemory:
             finally:
                 old_shm.close()
             shm = _open_shared_memory(
-                name=name,
+                name=shm_name,
                 create=True,
                 size=layout.total_size,
                 track=True,
             )
 
-        io = cls(shm, layout, owner=True, unlink_on_close=unlink_on_close)
+        io = cls(
+            shm,
+            layout,
+            config,
+            owner=True,
+            unlink_on_close=unlink_on_close,
+        )
         now = time.time()
         io._write_common_header(
             _CommonHeader(
                 total_size=layout.total_size,
-                nq=nq,
-                nv=nv,
-                nu=nu,
-                nsensordata=nsensordata,
+                config_fingerprint=config.fingerprint,
+                dimensions=dimensions,
             )
         )
         io._write_state_header(
@@ -319,20 +425,44 @@ class RobotSharedMemory:
         return io
 
     @classmethod
-    def attach(cls, name: str = DEFAULT_SHM_NAME) -> "RobotSharedMemory":
-        shm = _open_shared_memory(name=name, create=False, track=False)
+    def attach(
+        cls,
+        name: str | None = None,
+        *,
+        config_path: Path | None = None,
+        config: SharedMemoryConfig | None = None,
+    ) -> "RobotSharedMemory":
+        config = SharedMemoryConfig.load(config_path) if config is None else config
+        shm_name = config.shared_memory_name if name is None else name
+        shm = _open_shared_memory(name=shm_name, create=False, track=False)
         try:
             header = cls._read_header_from(shm)
-            layout = SharedMemoryLayout.from_header(header)
+            if header.config_fingerprint != config.fingerprint:
+                raise ValueError(
+                    "shared-memory config fingerprint mismatch; "
+                    "use the same JSON config for both processes"
+                )
+            dimensions = ModelDimensions(
+                nq=header.nq,
+                nv=header.nv,
+                nu=header.nu,
+                nsensordata=header.nsensordata,
+            )
+            layout = SharedMemoryLayout.from_config(config, dimensions)
+            if layout.total_size != header.total_size:
+                raise ValueError(
+                    "shared-memory size mismatch: "
+                    f"header={header.total_size}, computed={layout.total_size}"
+                )
             if shm.size < layout.total_size:
                 raise ValueError(
-                    f"Shared-memory block is too small: {shm.size} < "
+                    f"shared-memory block is too small: {shm.size} < "
                     f"{layout.total_size}"
                 )
         except Exception:
             shm.close()
             raise
-        return cls(shm, layout, owner=False, unlink_on_close=False)
+        return cls(shm, layout, config, owner=False, unlink_on_close=False)
 
     def read_header(self) -> SharedMemoryHeader:
         return self._read_header()
@@ -346,31 +476,19 @@ class RobotSharedMemory:
         *,
         sim_time: float,
         timestep: float,
-        qpos: Sequence[float],
-        qvel: Sequence[float],
-        sensordata: Sequence[float],
-        ctrl: Sequence[float],
-        actuator_force: Sequence[float],
+        **fields: object,
     ) -> None:
-        qpos_values = _as_float_list(qpos, self.layout.nq, "qpos")
-        qvel_values = _as_float_list(qvel, self.layout.nv, "qvel")
-        sensor_values = _as_float_list(
-            sensordata, self.layout.nsensordata, "sensordata"
+        field_values = self._validate_fields(
+            fields,
+            self.layout.state_fields,
+            "state",
         )
-        ctrl_values = _as_float_list(ctrl, self.layout.nu, "ctrl")
-        force_values = _as_float_list(
-            actuator_force, self.layout.nu, "actuator_force"
-        )
-
         state_header = self._read_state_header()
         odd_seq = _next_odd_sequence(state_header.sequence)
 
         self._write_state_header(replace(state_header, sequence=odd_seq))
-        self._pack_doubles(self.layout.qpos_offset, qpos_values)
-        self._pack_doubles(self.layout.qvel_offset, qvel_values)
-        self._pack_doubles(self.layout.sensordata_offset, sensor_values)
-        self._pack_doubles(self.layout.ctrl_offset, ctrl_values)
-        self._pack_doubles(self.layout.actuator_force_offset, force_values)
+        for name, values in field_values.items():
+            self._pack_doubles(self.layout.state_fields[name].offset, values)
         self._write_state_header(
             _StateHeader(
                 sequence=odd_seq + 1,
@@ -391,17 +509,7 @@ class RobotSharedMemory:
                 time.sleep(0)
                 continue
 
-            qpos = self._unpack_doubles(self.layout.qpos_offset, self.layout.nq)
-            qvel = self._unpack_doubles(self.layout.qvel_offset, self.layout.nv)
-            sensordata = self._unpack_doubles(
-                self.layout.sensordata_offset,
-                self.layout.nsensordata,
-            )
-            ctrl = self._unpack_doubles(self.layout.ctrl_offset, self.layout.nu)
-            actuator_force = self._unpack_doubles(
-                self.layout.actuator_force_offset,
-                self.layout.nu,
-            )
+            fields = self._read_fields(self.layout.state_fields)
 
             state_after = self._read_state_header()
             if (
@@ -414,29 +522,30 @@ class RobotSharedMemory:
                     sim_time=state_after.sim_time,
                     timestep=state_after.timestep,
                     wall_time=state_after.wall_time,
-                    qpos=qpos,
-                    qvel=qvel,
-                    sensordata=sensordata,
-                    ctrl=ctrl,
-                    actuator_force=actuator_force,
+                    fields=fields,
                 )
 
             if time.monotonic() >= deadline:
                 raise TimeoutError("Timed out waiting for a stable state read")
 
-    def write_torque(
+    def write_command(
         self,
-        torque: Sequence[float],
         *,
         enabled: bool = True,
         mode: int = COMMAND_MODE_TORQUE,
+        **fields: object,
     ) -> None:
-        torque_values = _as_float_list(torque, self.layout.nu, "torque")
+        field_values = self._validate_fields(
+            fields,
+            self.layout.command_fields,
+            "command",
+        )
         command_header = self._read_command_header()
         odd_seq = _next_odd_sequence(command_header.sequence)
 
         self._write_command_header(replace(command_header, sequence=odd_seq))
-        self._pack_doubles(self.layout.command_torque_offset, torque_values)
+        for name, values in field_values.items():
+            self._pack_doubles(self.layout.command_fields[name].offset, values)
         self._write_command_header(
             _CommandHeader(
                 sequence=odd_seq + 1,
@@ -446,8 +555,28 @@ class RobotSharedMemory:
             )
         )
 
+    def write_torque(
+        self,
+        torque: Sequence[float],
+        *,
+        enabled: bool = True,
+        mode: int = COMMAND_MODE_TORQUE,
+    ) -> None:
+        if "torque" not in self.layout.command_fields:
+            raise KeyError("command field 'torque' is not configured")
+        fields = {
+            name: [0.0] * layout.size
+            for name, layout in self.layout.command_fields.items()
+        }
+        fields["torque"] = torque
+        self.write_command(enabled=enabled, mode=mode, **fields)
+
     def disable_command(self) -> None:
-        self.write_torque([0.0] * self.layout.nu, enabled=False)
+        fields = {
+            name: [0.0] * layout.size
+            for name, layout in self.layout.command_fields.items()
+        }
+        self.write_command(enabled=False, **fields)
 
     def read_command(self, timeout: float = 1.0) -> RobotCommand:
         deadline = time.monotonic() + timeout
@@ -459,10 +588,7 @@ class RobotSharedMemory:
                 time.sleep(0)
                 continue
 
-            torque = self._unpack_doubles(
-                self.layout.command_torque_offset,
-                self.layout.nu,
-            )
+            fields = self._read_fields(self.layout.command_fields)
 
             command_after = self._read_command_header()
             if (
@@ -474,7 +600,7 @@ class RobotSharedMemory:
                     enabled=command_after.enabled,
                     mode=command_after.mode,
                     wall_time=command_after.wall_time,
-                    torque=torque,
+                    fields=fields,
                 )
 
             if time.monotonic() >= deadline:
@@ -524,10 +650,13 @@ class RobotSharedMemory:
 
         return _CommonHeader(
             total_size=values[3],
-            nq=values[4],
-            nv=values[5],
-            nu=values[6],
-            nsensordata=values[7],
+            dimensions=ModelDimensions(
+                nq=values[4],
+                nv=values[5],
+                nu=values[6],
+                nsensordata=values[7],
+            ),
+            config_fingerprint=values[8],
         )
 
     @staticmethod
@@ -561,10 +690,11 @@ class RobotSharedMemory:
         command = cls._read_command_header_from(shm)
         return SharedMemoryHeader(
             total_size=common.total_size,
-            nq=common.nq,
-            nv=common.nv,
-            nu=common.nu,
-            nsensordata=common.nsensordata,
+            config_fingerprint=common.config_fingerprint,
+            nq=common.dimensions.nq,
+            nv=common.dimensions.nv,
+            nu=common.dimensions.nu,
+            nsensordata=common.dimensions.nsensordata,
             state_seq=state.sequence,
             command_seq=command.sequence,
             sim_alive=state.sim_alive,
@@ -593,10 +723,11 @@ class RobotSharedMemory:
             VERSION,
             ARRAYS_OFFSET,
             int(header.total_size),
-            int(header.nq),
-            int(header.nv),
-            int(header.nu),
-            int(header.nsensordata),
+            int(header.dimensions.nq),
+            int(header.dimensions.nv),
+            int(header.dimensions.nu),
+            int(header.dimensions.nsensordata),
+            int(header.config_fingerprint),
         )
 
     def _write_state_header(self, header: _StateHeader) -> None:
@@ -625,6 +756,33 @@ class RobotSharedMemory:
         self._shm.buf[ARRAYS_OFFSET : self.layout.total_size] = b"\0" * (
             self.layout.total_size - ARRAYS_OFFSET
         )
+
+    def _validate_fields(
+        self,
+        fields: dict[str, object],
+        layout_fields: dict[str, FieldLayout],
+        label: str,
+    ) -> dict[str, list[float]]:
+        missing = sorted(set(layout_fields) - set(fields))
+        unknown = sorted(set(fields) - set(layout_fields))
+        if missing:
+            raise ValueError(f"missing {label} field(s): {', '.join(missing)}")
+        if unknown:
+            raise ValueError(f"unknown {label} field(s): {', '.join(unknown)}")
+
+        return {
+            name: _as_float_list(fields[name], layout.size, name)
+            for name, layout in layout_fields.items()
+        }
+
+    def _read_fields(
+        self,
+        layout_fields: dict[str, FieldLayout],
+    ) -> dict[str, list[float]]:
+        return {
+            name: self._unpack_doubles(field.offset, field.size)
+            for name, field in layout_fields.items()
+        }
 
     def _pack_doubles(self, offset: int, values: Sequence[float]) -> None:
         if not values:

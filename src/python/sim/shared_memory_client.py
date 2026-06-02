@@ -7,7 +7,7 @@ import argparse
 import time
 from pathlib import Path
 
-from robot_shared_memory import DEFAULT_SHM_NAME, RobotSharedMemory
+from robot_shared_memory import DEFAULT_CONFIG_PATH, RobotSharedMemory
 
 
 def parse_args() -> argparse.Namespace:
@@ -16,8 +16,13 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--name",
-        default=DEFAULT_SHM_NAME,
-        help="Shared-memory block name.",
+        help="Override the shared-memory block name from the JSON config.",
+    )
+    parser.add_argument(
+        "--config",
+        type=Path,
+        default=DEFAULT_CONFIG_PATH,
+        help="JSON config describing shared-memory state and command fields.",
     )
     parser.add_argument(
         "--torque",
@@ -65,13 +70,13 @@ def run_cycle(shared_io: RobotSharedMemory, args: argparse.Namespace) -> str:
     elif args.torque is not None:
         shared_io.write_torque(args.torque)
 
+    field_summary = " ".join(
+        f"{name}={format_values(values)}" for name, values in state.fields.items()
+    )
     return (
         f"t={state.sim_time:.4f} "
         f"alive={int(state.sim_alive)} "
-        f"qpos={format_values(state.qpos)} "
-        f"qvel={format_values(state.qvel)} "
-        f"ctrl={format_values(state.ctrl)} "
-        f"actuator_force={format_values(state.actuator_force)}"
+        f"{field_summary}"
     )
 
 
@@ -80,18 +85,25 @@ def main() -> int:
     if args.rate <= 0:
         raise ValueError("--rate must be greater than 0.")
 
-    with RobotSharedMemory.attach(args.name) as shared_io:
-        header = shared_io.read_header()
-        if args.torque is not None and len(args.torque) != header.nu:
+    with RobotSharedMemory.attach(args.name, config_path=args.config) as shared_io:
+        if args.torque is not None and "torque" not in shared_io.layout.command_fields:
+            raise ValueError("The JSON config does not define a 'torque' command field.")
+        if args.torque is not None:
+            expected_torque_size = shared_io.layout.command_fields["torque"].size
+        if args.torque is not None and len(args.torque) != expected_torque_size:
             raise ValueError(
-                f"--torque needs {header.nu} values for this model, "
+                f"--torque needs {expected_torque_size} values for this config, "
                 f"got {len(args.torque)}."
             )
 
         log_file = None
         if args.log:
             log_file = args.log.open("w", encoding="utf-8")
-            log_file.write("wall_time,sim_time,sim_alive,qpos,qvel,ctrl,actuator_force\n")
+            field_names = list(shared_io.layout.state_fields)
+            log_file.write(
+                ",".join(["wall_time", "sim_time", "sim_alive", *field_names])
+                + "\n"
+            )
 
         try:
             deadline = time.monotonic() + args.duration
@@ -101,11 +113,14 @@ def main() -> int:
 
                 if log_file:
                     state = shared_io.read_state()
+                    field_values = [
+                        f'"{state.fields[name]}"'
+                        for name in shared_io.layout.state_fields
+                    ]
                     log_file.write(
                         f"{state.wall_time:.9f},{state.sim_time:.9f},"
                         f"{int(state.sim_alive)},"
-                        f'"{state.qpos}","{state.qvel}",'
-                        f'"{state.ctrl}","{state.actuator_force}"\n'
+                        f"{','.join(field_values)}\n"
                     )
                     log_file.flush()
 

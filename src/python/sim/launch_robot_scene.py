@@ -13,7 +13,7 @@ from pathlib import Path
 
 from robot_shared_memory import (
     COMMAND_MODE_TORQUE,
-    DEFAULT_SHM_NAME,
+    DEFAULT_CONFIG_PATH,
     RobotSharedMemory,
 )
 
@@ -23,7 +23,7 @@ SCENE_ENV_VAR = "ROBOT_SCENE_XML"
 
 
 def project_root() -> Path:
-    return Path(__file__).resolve().parents[2]
+    return Path(__file__).resolve().parents[3]
 
 
 def default_scene_path() -> Path | None:
@@ -53,15 +53,25 @@ def joint_names(mujoco, model) -> list[str]:
     ]
 
 
+def state_field_values(shared_io: RobotSharedMemory, model, data) -> dict[str, object]:
+    values: dict[str, object] = {}
+    for name in shared_io.layout.state_fields:
+        if hasattr(data, name):
+            values[name] = getattr(data, name)
+        elif hasattr(model, name):
+            values[name] = getattr(model, name)
+        else:
+            raise ValueError(
+                f"No MuJoCo data source for configured state field {name!r}."
+            )
+    return values
+
+
 def write_sim_state(shared_io: RobotSharedMemory, model, data) -> None:
     shared_io.write_state(
         sim_time=data.time,
         timestep=model.opt.timestep,
-        qpos=data.qpos,
-        qvel=data.qvel,
-        sensordata=data.sensordata,
-        ctrl=data.ctrl,
-        actuator_force=data.actuator_force,
+        **state_field_values(shared_io, model, data),
     )
 
 
@@ -90,7 +100,8 @@ def launch_with_python_viewer(
     scene_path: Path,
     duration: float,
     *,
-    shm_name: str,
+    shm_name: str | None,
+    shm_config: Path,
     no_unlink: bool,
 ) -> bool:
     """Try the MuJoCo Python passive viewer if the bindings are installed."""
@@ -113,6 +124,7 @@ def launch_with_python_viewer(
         nu=model.nu,
         nsensordata=model.nsensordata,
         timestep=model.opt.timestep,
+        config_path=shm_config,
         unlink_on_close=not no_unlink,
     ) as shared_io:
         print(f"Shared memory: {shared_io.name}")
@@ -192,8 +204,13 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--shm-name",
-        default=DEFAULT_SHM_NAME,
-        help="Name of the shared-memory block used for robot I/O.",
+        help="Override the shared-memory block name from the JSON config.",
+    )
+    parser.add_argument(
+        "--shm-config",
+        type=Path,
+        default=DEFAULT_CONFIG_PATH,
+        help="JSON config describing shared-memory state and command fields.",
     )
     parser.add_argument(
         "--no-unlink",
@@ -226,6 +243,7 @@ def main() -> int:
         scene_path,
         args.duration,
         shm_name=args.shm_name,
+        shm_config=args.shm_config,
         no_unlink=args.no_unlink,
     ):
         return 0
