@@ -11,6 +11,12 @@ tools/urdf2mjcf
 
 # Generated MuJoCo artifacts
 *.mjb
+MUJOCO_LOG.TXT
+
+# Python / uv
+.venv/
+__pycache__/
+*.py[cod]
 
 # Editor and OS files
 .vscode/
