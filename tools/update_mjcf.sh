@@ -27,6 +27,7 @@ validate_mjcf() {
 }
 
 "$SCRIPT_DIR/urdf2mjcf" "$URDF" "$GENERATED"
+python3 "$SCRIPT_DIR/add_imu_sites.py" "$GENERATED"
 "$SCRIPT_DIR/make_floating_mjcf.py" "$GENERATED" "$FLOATING_GENERATED"
 
 echo "Updated generated MJCF: $GENERATED"

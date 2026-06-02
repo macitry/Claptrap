@@ -14,43 +14,35 @@
 
   <sensor>
     <framequat name="imu_plane1_diag_a_orientation"
-               objtype="body"
-               objname="imu_plane1_diag_a"/>
-    <frameangvel name="imu_plane1_diag_a_angular_velocity"
-                 objtype="body"
-                 objname="imu_plane1_diag_a"/>
-    <framelinacc name="imu_plane1_diag_a_linear_acceleration"
-                 objtype="body"
-                 objname="imu_plane1_diag_a"/>
+               objtype="site"
+               objname="imu_plane1_diag_a_site"/>
+    <gyro name="imu_plane1_diag_a_angular_velocity"
+          site="imu_plane1_diag_a_site"/>
+    <accelerometer name="imu_plane1_diag_a_linear_acceleration"
+                   site="imu_plane1_diag_a_site"/>
 
     <framequat name="imu_plane1_diag_b_orientation"
-               objtype="body"
-               objname="imu_plane1_diag_b"/>
-    <frameangvel name="imu_plane1_diag_b_angular_velocity"
-                 objtype="body"
-                 objname="imu_plane1_diag_b"/>
-    <framelinacc name="imu_plane1_diag_b_linear_acceleration"
-                 objtype="body"
-                 objname="imu_plane1_diag_b"/>
+               objtype="site"
+               objname="imu_plane1_diag_b_site"/>
+    <gyro name="imu_plane1_diag_b_angular_velocity"
+          site="imu_plane1_diag_b_site"/>
+    <accelerometer name="imu_plane1_diag_b_linear_acceleration"
+                   site="imu_plane1_diag_b_site"/>
 
     <framequat name="imu_plane2_diag_a_orientation"
-               objtype="body"
-               objname="imu_plane2_diag_a"/>
-    <frameangvel name="imu_plane2_diag_a_angular_velocity"
-                 objtype="body"
-                 objname="imu_plane2_diag_a"/>
-    <framelinacc name="imu_plane2_diag_a_linear_acceleration"
-                 objtype="body"
-                 objname="imu_plane2_diag_a"/>
+               objtype="site"
+               objname="imu_plane2_diag_a_site"/>
+    <gyro name="imu_plane2_diag_a_angular_velocity"
+          site="imu_plane2_diag_a_site"/>
+    <accelerometer name="imu_plane2_diag_a_linear_acceleration"
+                   site="imu_plane2_diag_a_site"/>
 
     <framequat name="imu_plane2_diag_b_orientation"
-               objtype="body"
-               objname="imu_plane2_diag_b"/>
-    <frameangvel name="imu_plane2_diag_b_angular_velocity"
-                 objtype="body"
-                 objname="imu_plane2_diag_b"/>
-    <framelinacc name="imu_plane2_diag_b_linear_acceleration"
-                 objtype="body"
-                 objname="imu_plane2_diag_b"/>
+               objtype="site"
+               objname="imu_plane2_diag_b_site"/>
+    <gyro name="imu_plane2_diag_b_angular_velocity"
+          site="imu_plane2_diag_b_site"/>
+    <accelerometer name="imu_plane2_diag_b_linear_acceleration"
+                   site="imu_plane2_diag_b_site"/>
   </sensor>
 </mujoco>
