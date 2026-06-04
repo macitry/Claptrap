@@ -23,7 +23,7 @@ SCENE_ENV_VAR = "ROBOT_SCENE_XML"
 
 
 def project_root() -> Path:
-    return Path(__file__).resolve().parents[3]
+    return Path(__file__).resolve().parents[2]
 
 
 def default_scene_path() -> Path | None:

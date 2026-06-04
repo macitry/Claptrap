@@ -8,9 +8,11 @@ cmake-build-*/
 
 # Local tool binaries
 tools/urdf2mjcf
-src/cpp/runtime/robot_runtime
-src/cpp/sim/launch_robot_scene_cpp
-src/cpp/sim/shared_memory_client_cpp
+
+# Third-party libraries
+/eigenpy/
+/mujoco/
+/pinocchio/
 
 # Generated MuJoCo artifacts
 *.mjb

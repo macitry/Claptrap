@@ -14,11 +14,7 @@ from pathlib import Path
 from typing import Any, Sequence
 
 
-DEFAULT_CONFIG_PATH = (
-    Path(__file__).resolve().parents[2]
-    / "config"
-    / "robot_shared_memory_config.json"
-)
+DEFAULT_CONFIG_PATH = Path(__file__).resolve().parent / "robot_shared_memory_config.json"
 DEFAULT_SHM_NAME = "robot_mujoco_io"
 COMMAND_MODE_TORQUE = 0
 
