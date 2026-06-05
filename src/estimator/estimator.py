@@ -9,7 +9,8 @@ import time
 from pathlib import Path
 from typing import Sequence
 import pinocchio as pin
-
+import eigenpy
+import numpy as np
 SIM_DIR = Path(__file__).resolve().parents[1] / "sim"
 if str(SIM_DIR) not in sys.path:
     sys.path.insert(0, str(SIM_DIR))
@@ -17,120 +18,115 @@ if str(SIM_DIR) not in sys.path:
 from robot_shared_memory import DEFAULT_CONFIG_PATH, RobotSharedMemory, RobotState
 
 
-def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        description="Read the current sensor data from the simulator shared memory."
+class IMU:
+    w: np.ndarray
+    a: np.ndarray
+
+
+def rotation_x(angle: float) -> np.ndarray:
+    cos_angle = np.cos(angle)
+    sin_angle = np.sin(angle)
+    return np.array(
+        [
+            [1.0, 0.0, 0.0],
+            [0.0, cos_angle, -sin_angle],
+            [0.0, sin_angle, cos_angle],
+        ]
     )
-    parser.add_argument(
-        "--name",
-        help="Override the shared-memory block name from the JSON config.",
+
+
+def rotation_y(angle: float) -> np.ndarray:
+    cos_angle = np.cos(angle)
+    sin_angle = np.sin(angle)
+    return np.array(
+        [
+            [cos_angle, 0.0, sin_angle],
+            [0.0, 1.0, 0.0],
+            [-sin_angle, 0.0, cos_angle],
+        ]
     )
-    parser.add_argument(
-        "--config",
-        type=Path,
-        default=DEFAULT_CONFIG_PATH,
-        help="JSON config describing shared-memory state and command fields.",
-    )
-    parser.add_argument(
-        "--duration",
-        type=float,
-        default=0.0,
-        help="Seconds to run. Use 0 for one sensor read.",
-    )
-    parser.add_argument(
-        "--rate",
-        type=float,
-        default=50.0,
-        help="Estimator read rate in Hz when --duration is greater than 0.",
-    )
-    parser.add_argument(
-        "--timeout",
-        type=float,
-        default=1.0,
-        help="Seconds to wait for a stable shared-memory state read.",
-    )
-    return parser.parse_args()
 
 
-def format_values(values: Sequence[float], limit: int = 8) -> str:
-    shown = ", ".join(f"{value:.6g}" for value in values[:limit])
-    if len(values) > limit:
-        shown += ", ..."
-    return f"[{shown}]"
+def attitude_rate_jacobian(q1_hat: float, q2_hat: float) -> np.ndarray:
+    """Return J(q) for omega_base = J(q) @ qdot_G."""
+    e1 = np.array([1.0, 0.0, 0.0])
+    e2 = np.array([0.0, 1.0, 0.0])
+    e3 = np.array([0.0, 0.0, 1.0])
+
+    r1 = rotation_x(q1_hat)
+    r2 = rotation_y(q2_hat)
+    return np.column_stack((r2.T @ e1, e2, r2.T @ r1.T @ e3))
 
 
-def format_eigenpy_example(qpos: Sequence[float], qvel: Sequence[float]) -> str:
-    try:
-        import eigenpy
-        import numpy as np
-    except ImportError as exc:
-        missing_name = exc.name or "module"
-        return f"eigenpy=unavailable({missing_name})"
-
-    dimension = max(1, min(4, max(len(qpos), len(qvel))))
-    q = np.zeros(dimension, dtype=float)
-    v = np.zeros(dimension, dtype=float)
-    q[: min(dimension, len(qpos))] = qpos[:dimension]
-    v[: min(dimension, len(qvel))] = qvel[:dimension]
-
-    # EigenPy accepts NumPy arrays and dispatches them to Eigen-backed solvers.
-    sample = np.vstack((q, v))
-    gram_matrix = sample.T @ sample + np.eye(dimension) * 1e-9
-    eigensolver = eigenpy.SelfAdjointEigenSolver(gram_matrix)
-    if eigensolver.info() != eigenpy.ComputationInfo.Success:
-        return f"eigenpy=solver_info({eigensolver.info()})"
-
-    return f"eigenpy_eigs={format_values(eigensolver.eigenvalues())}"
+def generalized_attitude_rate(
+    imu_w_avg_base: np.ndarray,
+    q1_hat: float,
+    q2_hat: float,
+) -> np.ndarray:
+    jacobian = attitude_rate_jacobian(q1_hat, q2_hat)
+    return np.linalg.solve(jacobian, imu_w_avg_base)
 
 
-def read_current_sensor_data(
-    shared_io: RobotSharedMemory,
-    *,
-    timeout: float = 1.0,
-) -> tuple[RobotState, list[float]]:
-    """Return the latest stable state and its MuJoCo sensordata field."""
-    state = shared_io.read_state(timeout=timeout)
-    try:
-        return state, state.fields["sensordata"]
-    except KeyError as exc:
-        available = ", ".join(state.fields) or "none"
-        raise KeyError(
-            "The shared-memory config does not define a 'sensordata' state field. "
-            f"Available state fields: {available}."
-        ) from exc
+class Estimator:
+    def __init__(self, config_path: str = DEFAULT_CONFIG_PATH):
+        self.shared_memory = RobotSharedMemory(config_path)
+
+        self.imu1 = IMU()
+        self.imu1.w = np.zeros(3)
+        self.imu2 = IMU()
+        self.imu2.w = np.zeros(3)
+        self.imu3 = IMU()
+        self.imu3.w = np.zeros(3)
+        self.imu4 = IMU()
+        self.imu4.w = np.zeros(3)
+
+        self.q_prev = np.zeros(3)
+
+        self.dt = 0.01
+        self.q1_hat = 0.0
+        self.q2_hat = 0.0
+
+    def read_state(self) -> RobotState:
+        return self.shared_memory.read_state()
+
+    def estimate(self, state: RobotState) -> None:
+
+        while True:
+            state = self.read_state()
+            print(f"state={state}")
+
+            # 基于四个IMU的平均角速度进行估计机体角度。
+            imu_w_avg_imu = np.average(
+                [self.imu1.w, self.imu2.w, self.imu3.w, self.imu4.w], axis=0
+            )
+
+            base_R_imu = np.eye(3)
+            imu_w_avg_base = base_R_imu @ imu_w_avg_imu
 
 
-def run_once(shared_io: RobotSharedMemory, timeout: float) -> str:
-    state, sensordata = read_current_sensor_data(shared_io, timeout=timeout)
-    qpos = state.fields.get("qpos", [])
-    qvel = state.fields.get("qvel", [])
-    eigenpy_example = format_eigenpy_example(qpos, qvel)
+            qdot_g = generalized_attitude_rate(
+                imu_w_avg_base,
+                self.q1_hat,
+                self.q2_hat,
+            )
 
-    return (
-        f"t={state.sim_time:.4f} "
-        f"alive={int(state.sim_alive)} "
-        f"sensordata={format_values(sensordata)} "
-        f"qpos={format_values(qpos)} "
-        f"qvel={format_values(qvel)} "
-        f"{eigenpy_example}"
-    )
+            print(f"imu_w_avg_base={imu_w_avg_base}")
+            print(f"J={attitude_rate_jacobian(self.q1_hat, self.q2_hat)}")
+            print(f"qdot_G={qdot_g}")
+
+            self.q_prev = self.q_prev + qdot_g * self.dt
+
 
 
 def main() -> int:
-    args = parse_args()
-    if args.rate <= 0:
-        raise ValueError("--rate must be greater than 0.")
-    if args.timeout <= 0:
-        raise ValueError("--timeout must be greater than 0.")
 
-    with RobotSharedMemory.attach(args.name, config_path=args.config) as shared_io:
-        deadline = time.monotonic() + args.duration
-        while True:
-            print(run_once(shared_io, args.timeout))
 
-            if args.duration <= 0 or time.monotonic() >= deadline:
-                break
-            time.sleep(1.0 / args.rate)
+
+
+
+
+
+
 
     return 0
 
