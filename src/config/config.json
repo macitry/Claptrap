@@ -1,0 +1,30 @@
+{
+  "sim": {
+    "launch_robot_scene": {
+      "scene": "model/xml/claptrap_scene.xml",
+      "duration": 50.0,
+      "force_simulate": false,
+      "shm_name": null,
+      "shm_config": "src/sim/robot_shared_memory_config.json",
+      "no_unlink": false
+    },
+    "shared_memory_client": {
+      "name": null,
+      "config": "src/sim/robot_shared_memory_config.json",
+      "torque": null,
+      "disable_command": false,
+      "duration": 0.0,
+      "rate": 50.0,
+      "log": null
+    }
+  },
+  "estimator": {
+    "pinocchio_example": {
+      "urdf": "model/urdf/claptrap.urdf",
+      "floating_base": false,
+      "imu_frame": null,
+      "imu_angular_velocity": [0.1, -0.2, 0.3],
+      "body_rpy": [0.0, 0.0, 0.0]
+    }
+  }
+}

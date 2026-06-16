@@ -3,56 +3,45 @@
 
 from __future__ import annotations
 
-import argparse
+import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import numpy as np
+
+CONFIG_DIR = Path(__file__).resolve().parents[1] / "config"
+if str(CONFIG_DIR) not in sys.path:
+    sys.path.insert(0, str(CONFIG_DIR))
+
+from app_config import config_section, require_project_path
 
 
 def project_root() -> Path:
     return Path(__file__).resolve().parents[2]
 
 
-def default_urdf_path() -> Path:
-    return project_root() / "model" / "urdf" / "claptrap.urdf"
+def load_example_config() -> SimpleNamespace:
+    config = config_section("estimator", "pinocchio_example")
+    imu_angular_velocity = config.get("imu_angular_velocity", [0.10, -0.20, 0.30])
+    body_rpy = config.get("body_rpy", [0.0, 0.0, 0.0])
+    if len(imu_angular_velocity) != 3:
+        raise ValueError(
+            "estimator.pinocchio_example.imu_angular_velocity must have 3 values."
+        )
+    if len(body_rpy) != 3:
+        raise ValueError("estimator.pinocchio_example.body_rpy must have 3 values.")
 
+    imu_frame = config.get("imu_frame")
+    if imu_frame is not None and not isinstance(imu_frame, str):
+        raise ValueError("estimator.pinocchio_example.imu_frame must be a string or null.")
 
-def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        description="Load the Claptrap URDF with Pinocchio and run basic dynamics."
+    return SimpleNamespace(
+        urdf=require_project_path(config, "urdf"),
+        floating_base=bool(config.get("floating_base", False)),
+        imu_frame=imu_frame,
+        imu_angular_velocity=[float(value) for value in imu_angular_velocity],
+        body_rpy=[float(value) for value in body_rpy],
     )
-    parser.add_argument(
-        "--urdf",
-        type=Path,
-        default=default_urdf_path(),
-        help="URDF model to load.",
-    )
-    parser.add_argument(
-        "--floating-base",
-        action="store_true",
-        help="Add a free-flyer root joint when building the model.",
-    )
-    parser.add_argument(
-        "--imu-frame",
-        help="IMU frame name to use. Defaults to all frames whose names start with imu_.",
-    )
-    parser.add_argument(
-        "--imu-angular-velocity",
-        type=float,
-        nargs=3,
-        metavar=("WX", "WY", "WZ"),
-        default=(0.10, -0.20, 0.30),
-        help="Angular velocity measured in the IMU frame, in rad/s.",
-    )
-    parser.add_argument(
-        "--body-rpy",
-        type=float,
-        nargs=3,
-        metavar=("ROLL", "PITCH", "YAW"),
-        default=(0.0, 0.0, 0.0),
-        help="Current body roll/pitch/yaw used by the Euler-rate inverse, in rad.",
-    )
-    return parser.parse_args()
 
 
 def import_pinocchio():
@@ -203,10 +192,10 @@ def generalized_rates_from_body_omega(
 
 
 def main() -> int:
-    args = parse_args()
+    args = load_example_config()
     pin = import_pinocchio()
 
-    model = build_model(pin, args.urdf.expanduser().resolve(), args.floating_base)
+    model = build_model(pin, args.urdf, args.floating_base)
     data = model.createData()
 
     q0 = pin.neutral(model)

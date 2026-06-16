@@ -3,34 +3,25 @@
 
 from __future__ import annotations
 
-import argparse
-import os
 import shutil
 import subprocess
 import sys
 import time
 from pathlib import Path
 
+CONFIG_DIR = Path(__file__).resolve().parents[1] / "config"
+if str(CONFIG_DIR) not in sys.path:
+    sys.path.insert(0, str(CONFIG_DIR))
+
+from app_config import config_section, require_project_path, resolve_project_path
 from robot_shared_memory import (
     COMMAND_MODE_TORQUE,
-    DEFAULT_CONFIG_PATH,
     RobotSharedMemory,
 )
 
 
-DEFAULT_DURATION_SECONDS = 50.0
-SCENE_ENV_VAR = "ROBOT_SCENE_XML"
-
-
 def project_root() -> Path:
     return Path(__file__).resolve().parents[2]
-
-
-def default_scene_path() -> Path | None:
-    scene_path = os.environ.get(SCENE_ENV_VAR)
-    if scene_path:
-        return Path(scene_path)
-    return None
 
 
 def default_simulate_binary() -> Path:
@@ -179,79 +170,51 @@ def launch_with_simulate_binary(scene_path: Path, duration: float) -> None:
             process.wait()
 
 
-def parse_args() -> argparse.Namespace:
-    scene_default = default_scene_path()
-    parser = argparse.ArgumentParser(
-        description="Open a robot MJCF scene in the MuJoCo interactive viewer."
-    )
-    parser.add_argument(
-        "--scene",
-        type=Path,
-        default=scene_default,
-        required=scene_default is None,
-        help=f"MJCF scene path to load. Can also be set with {SCENE_ENV_VAR}.",
-    )
-    parser.add_argument(
-        "--duration",
-        type=float,
-        default=DEFAULT_DURATION_SECONDS,
-        help="How many seconds to keep the viewer running.",
-    )
-    parser.add_argument(
-        "--force-simulate",
-        action="store_true",
-        help="Use the local simulate binary without shared-memory robot I/O.",
-    )
-    parser.add_argument(
-        "--shm-name",
-        help="Override the shared-memory block name from the JSON config.",
-    )
-    parser.add_argument(
-        "--shm-config",
-        type=Path,
-        default=DEFAULT_CONFIG_PATH,
-        help="JSON config describing shared-memory state and command fields.",
-    )
-    parser.add_argument(
-        "--no-unlink",
-        action="store_true",
-        help="Leave the shared-memory block after exit for debugging.",
-    )
-    return parser.parse_args()
-
-
 def main() -> int:
-    args = parse_args()
-    scene_path = args.scene.expanduser().resolve()
+    config = config_section("sim", "launch_robot_scene")
+    scene_path = require_project_path(config, "scene")
+    duration = float(config.get("duration", 0.0))
+    force_simulate = bool(config.get("force_simulate", False))
+    shm_name = config.get("shm_name")
+    shm_config = resolve_project_path(config.get("shm_config"))
+    no_unlink = bool(config.get("no_unlink", False))
 
     if not scene_path.exists():
         print(f"Scene XML does not exist: {scene_path}", file=sys.stderr)
         return 1
 
-    if args.duration <= 0:
-        print("--duration must be greater than 0.", file=sys.stderr)
+    if duration <= 0:
+        print("sim.launch_robot_scene.duration must be greater than 0.", file=sys.stderr)
+        return 1
+
+    if shm_name is not None and not isinstance(shm_name, str):
+        print("sim.launch_robot_scene.shm_name must be a string or null.", file=sys.stderr)
+        return 1
+
+    if shm_config is None:
+        print("sim.launch_robot_scene.shm_config must be a path string.", file=sys.stderr)
         return 1
 
     print(f"Loading scene: {scene_path}")
-    print(f"Viewer will run for {args.duration:g} seconds.")
+    print(f"Viewer will run for {duration:g} seconds.")
 
-    if args.force_simulate:
-        launch_with_simulate_binary(scene_path, args.duration)
+    if force_simulate:
+        launch_with_simulate_binary(scene_path, duration)
         return 0
 
     if launch_with_python_viewer(
         scene_path,
-        args.duration,
-        shm_name=args.shm_name,
-        shm_config=args.shm_config,
-        no_unlink=args.no_unlink,
+        duration,
+        shm_name=shm_name,
+        shm_config=shm_config,
+        no_unlink=no_unlink,
     ):
         return 0
 
     print(
         "MuJoCo Python viewer is required for shared-memory robot I/O. "
-        "Install/use a Python environment with mujoco and numpy, or run with "
-        "--force-simulate for display-only mode.",
+        "Install/use a Python environment with mujoco and numpy, or set "
+        "sim.launch_robot_scene.force_simulate to true for display-only mode.",
         file=sys.stderr,
     )
     return 1

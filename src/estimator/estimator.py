@@ -3,7 +3,6 @@
 
 from __future__ import annotations
 
-import argparse
 import sys
 import time
 from pathlib import Path
@@ -138,13 +137,14 @@ class Estimator:
 
             base_ddq_wheels = ddq_wheels #假设姿态保持在较小的范围内，旋转矩阵近似为单位矩阵
 
-            M_hat=np.array([[self.imu1.a-base_ddq_wheels],
-                           [self.imu2.a-base_ddq_wheels],
-                           [self.imu3.a-base_ddq_wheels],
-                           [self.imu4.a-base_ddq_wheels]]
-            )
-            P_0=self.P[:,0]
-            B_g=-self.M*P_0
+            M_hat = np.array([
+                [self.imu1.a - base_ddq_wheels],
+                [self.imu2.a - base_ddq_wheels],
+                [self.imu3.a - base_ddq_wheels],
+                [self.imu4.a - base_ddq_wheels],
+            ])
+            P_0 = self.P[:, 0]
+            B_g = -self.M*P_0
 
             B_g1_hat, B_g2_hat, B_g3_hat = B_g
 
@@ -158,6 +158,12 @@ class Estimator:
             self.alpha = 0.5
             q = self.alpha*np.array([q1_A_hat, q2_A_hat])+(1-self.alpha)*np.array([self.q1_gy_hat, self.q2_gy_hat])
             print(f"q={q}")
+    
+
+
+    
+
+
 
 
 

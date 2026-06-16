@@ -3,56 +3,33 @@
 
 from __future__ import annotations
 
-import argparse
+import sys
 import time
 from pathlib import Path
+from types import SimpleNamespace
 
-from robot_shared_memory import DEFAULT_CONFIG_PATH, RobotSharedMemory
+CONFIG_DIR = Path(__file__).resolve().parents[1] / "config"
+if str(CONFIG_DIR) not in sys.path:
+    sys.path.insert(0, str(CONFIG_DIR))
+
+from app_config import config_section, resolve_project_path
+from robot_shared_memory import RobotSharedMemory
 
 
-def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        description="Read robot state and optionally write torque commands."
+def load_client_config() -> SimpleNamespace:
+    config = config_section("sim", "shared_memory_client")
+    torque = config.get("torque")
+    if torque is not None:
+        torque = [float(value) for value in torque]
+    return SimpleNamespace(
+        name=config.get("name"),
+        config=resolve_project_path(config.get("config")),
+        torque=torque,
+        disable_command=bool(config.get("disable_command", False)),
+        duration=float(config.get("duration", 0.0)),
+        rate=float(config.get("rate", 50.0)),
+        log=resolve_project_path(config.get("log")),
     )
-    parser.add_argument(
-        "--name",
-        help="Override the shared-memory block name from the JSON config.",
-    )
-    parser.add_argument(
-        "--config",
-        type=Path,
-        default=DEFAULT_CONFIG_PATH,
-        help="JSON config describing shared-memory state and command fields.",
-    )
-    parser.add_argument(
-        "--torque",
-        type=float,
-        nargs="*",
-        help="Torque command in actuator order. Omit to read state only.",
-    )
-    parser.add_argument(
-        "--disable-command",
-        action="store_true",
-        help="Disable external torque command and send zero torque.",
-    )
-    parser.add_argument(
-        "--duration",
-        type=float,
-        default=0.0,
-        help="Seconds to run. Use 0 for one read/write cycle.",
-    )
-    parser.add_argument(
-        "--rate",
-        type=float,
-        default=50.0,
-        help="Client loop rate in Hz when --duration is greater than 0.",
-    )
-    parser.add_argument(
-        "--log",
-        type=Path,
-        help="Optional CSV file for sampled state summaries.",
-    )
-    return parser.parse_args()
 
 
 def format_values(values: list[float], limit: int = 6) -> str:
@@ -62,7 +39,7 @@ def format_values(values: list[float], limit: int = 6) -> str:
     return f"[{shown}]"
 
 
-def run_cycle(shared_io: RobotSharedMemory, args: argparse.Namespace) -> str:
+def run_cycle(shared_io: RobotSharedMemory, args: SimpleNamespace) -> str:
     state = shared_io.read_state()
 
     if args.disable_command:
@@ -81,9 +58,13 @@ def run_cycle(shared_io: RobotSharedMemory, args: argparse.Namespace) -> str:
 
 
 def main() -> int:
-    args = parse_args()
+    args = load_client_config()
     if args.rate <= 0:
-        raise ValueError("--rate must be greater than 0.")
+        raise ValueError("sim.shared_memory_client.rate must be greater than 0.")
+    if args.config is None:
+        raise ValueError("sim.shared_memory_client.config must be a path string.")
+    if args.name is not None and not isinstance(args.name, str):
+        raise ValueError("sim.shared_memory_client.name must be a string or null.")
 
     with RobotSharedMemory.attach(args.name, config_path=args.config) as shared_io:
         if args.torque is not None and "torque" not in shared_io.layout.command_fields:
@@ -92,7 +73,7 @@ def main() -> int:
             expected_torque_size = shared_io.layout.command_fields["torque"].size
         if args.torque is not None and len(args.torque) != expected_torque_size:
             raise ValueError(
-                f"--torque needs {expected_torque_size} values for this config, "
+                f"sim.shared_memory_client.torque needs {expected_torque_size} values, "
                 f"got {len(args.torque)}."
             )
 

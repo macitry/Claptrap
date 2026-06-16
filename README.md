@@ -35,7 +35,13 @@ Python dependencies are managed with `uv` in the project root.
 
 ```bash
 uv sync
-uv run python src/sim/launch_robot_scene.py --scene model/xml/claptrap_scene.xml
+uv run python src/sim/launch_robot_scene.py
+```
+
+Runtime options for `src` entry points are configured in:
+
+```bash
+src/config/config.json
 ```
 
 External shared-memory clients should also use `uv run`:
