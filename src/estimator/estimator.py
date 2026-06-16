@@ -6,15 +6,18 @@ from __future__ import annotations
 import sys
 import time
 from pathlib import Path
-from typing import Sequence
 import pinocchio as pin
 import eigenpy
 import numpy as np
 SIM_DIR = Path(__file__).resolve().parents[1] / "sim"
 if str(SIM_DIR) not in sys.path:
     sys.path.insert(0, str(SIM_DIR))
+CONFIG_DIR = Path(__file__).resolve().parents[1] / "config"
+if str(CONFIG_DIR) not in sys.path:
+    sys.path.insert(0, str(CONFIG_DIR))
 
-from robot_shared_memory import DEFAULT_CONFIG_PATH, RobotSharedMemory, RobotState
+from app_config import config_section, resolve_project_path
+from robot_shared_memory import RobotSharedMemory, RobotState
 
 
 class IMU:
@@ -62,53 +65,110 @@ def generalized_attitude_rate(
     imu_w_avg_base: np.ndarray,
     q1_hat: float,
     q2_hat: float,
-
 ) -> np.ndarray:
     jacobian = attitude_rate_jacobian(q1_hat, q2_hat)
     return np.linalg.solve(jacobian, imu_w_avg_base)
 
 
+def accelerometer_attitude_from_gravity(B_g_hat: np.ndarray) -> tuple[float, float]:
+    B_g_hat = np.asarray(B_g_hat, dtype=float).reshape(3)
+    B_g1_hat, B_g2_hat, B_g3_hat = B_g_hat
+
+    q1_A_hat = np.arctan2(
+        B_g2_hat,
+        np.sqrt(B_g1_hat**2 + B_g3_hat**2),
+    )
+    q2_A_hat = np.arctan2(-B_g1_hat, B_g3_hat)
+
+    return q1_A_hat, q2_A_hat
+
+
 class Estimator:
-    def __init__(self, config_path: str = DEFAULT_CONFIG_PATH):
-        self.shared_memory = RobotSharedMemory(config_path)
+    def __init__(
+        self,
+        *,
+        shared_memory_name: str | None = None,
+        shared_memory_config: Path,
+        wheel_radius: float = 0.0,
+        alpha: float = 0.5,
+        loop_rate: float = 50.0,
+    ):
+        self.shared_memory = RobotSharedMemory.attach(
+            shared_memory_name,
+            config_path=shared_memory_config,
+        )
 
         self.imu1 = IMU()
         self.imu1.w = np.zeros(3)
+        self.imu1.a = np.zeros(3)
         self.imu2 = IMU()
         self.imu2.w = np.zeros(3)
+        self.imu2.a = np.zeros(3)
         self.imu3 = IMU()
         self.imu3.w = np.zeros(3)
+        self.imu3.a = np.zeros(3)
         self.imu4 = IMU()
         self.imu4.w = np.zeros(3)
+        self.imu4.a = np.zeros(3)
 
         self.q_prev = np.zeros(3)
+        self.q_gy_prev = np.zeros(3)
 
         self.dt = 0.01
         self.q1_gy_hat = 0.0
         self.q2_gy_hat = 0.0
+        self.q1_A_hat = 0.0
+        self.q2_A_hat = 0.0
+        self.alpha = float(alpha)
+        self.loop_rate = float(loop_rate)
 
-        self.w_heels = np.zeros(3)
+        self.w_wheels = np.zeros(3)
+        self.r = float(wheel_radius)
 
         self.imu1.B_p_w = np.zeros(3)
         self.imu2.B_p_w = np.zeros(3)
         self.imu3.B_p_w = np.zeros(3)
         self.imu4.B_p_w = np.zeros(3)
 
-        self.P = np.array([[1.0, self.imu1.B_p_w],
-                           [1.0, self.imu2.B_p_w],
-                           [1.0, self.imu3.B_p_w],
-                           [1.0, self.imu4.B_p_w]])
+        self.P = np.vstack(
+            [
+                np.r_[1.0, self.imu1.B_p_w],
+                np.r_[1.0, self.imu2.B_p_w],
+                np.r_[1.0, self.imu3.B_p_w],
+                np.r_[1.0, self.imu4.B_p_w],
+            ]
+        )
+
+    def close(self) -> None:
+        self.shared_memory.close()
 
     def read_state(self) -> RobotState:
         return self.shared_memory.read_state()
 
-    def estimate(self, state: RobotState) -> None:
+    def update_imus_from_state(self, state: RobotState) -> None:
+        sensordata = np.asarray(state.sensordata, dtype=float)
+        imus = [self.imu1, self.imu2, self.imu3, self.imu4]
+        values_per_imu = 10  # framequat(4) + gyro(3) + accelerometer(3)
+        expected_size = len(imus) * values_per_imu
+        if sensordata.size < expected_size:
+            return
+
+        for index, imu in enumerate(imus):
+            offset = index * values_per_imu
+            imu.w = sensordata[offset + 4 : offset + 7]
+            imu.a = sensordata[offset + 7 : offset + 10]
+
+    def estimate(self, state: RobotState | None = None) -> None:
+        if state is not None:
+            self.update_imus_from_state(state)
 
         while True:
             state = self.read_state()
+            self.update_imus_from_state(state)
+            self.dt = state.timestep
             print(f"state={state}")
 
-        # 基于四个IMU的平均角速度进行估计机体角度。
+        #   基于四个IMU的平均角速度进行估计机体角度。
             imu_w_avg_imu = np.average(
                 [self.imu1.w, self.imu2.w, self.imu3.w, self.imu4.w], axis=0
             )
@@ -118,77 +178,80 @@ class Estimator:
 
             qdot_g = generalized_attitude_rate(
                 imu_w_avg_base,
-                self.q1_hat,
-                self.q2_hat,
+                self.q1_gy_hat,
+                self.q2_gy_hat,
             )
 
             print(f"imu_w_avg_base={imu_w_avg_base}")
-            print(f"J={attitude_rate_jacobian(self.q1_hat, self.q2_hat)}")
+            print(f"J={attitude_rate_jacobian(self.q1_gy_hat, self.q2_gy_hat)}")
             print(f"qdot_G={qdot_g}")
 
             self.q_gy_prev = self.q_gy_prev + qdot_g * self.dt
             self.q1_gy_hat = self.q_gy_prev[0]
             self.q2_gy_hat = self.q_gy_prev[1]
 
-        # 基于加速度计的重力方向估计机体角度.
+        #   基于加速度计的重力方向估计机体角度.
 
             # 1.计算车轮加速度
-            ddq_wheels = self.r * self.w_heels
+            ddq_wheels = self.r * self.w_wheels
 
-            base_ddq_wheels = ddq_wheels #假设姿态保持在较小的范围内，旋转矩阵近似为单位矩阵
+            base_ddq_wheels = ddq_wheels  # 假设姿态保持在较小的范围内，旋转矩阵近似为单位矩阵
 
-            M_hat = np.array([
-                [self.imu1.a - base_ddq_wheels],
-                [self.imu2.a - base_ddq_wheels],
-                [self.imu3.a - base_ddq_wheels],
-                [self.imu4.a - base_ddq_wheels],
-            ])
-            P_0 = self.P[:, 0]
-            B_g = -self.M*P_0
-
-            B_g1_hat, B_g2_hat, B_g3_hat = B_g
-
-            q1_A_hat = np.arctan2(
-                B_g2_hat,
-                np.sqrt(B_g1_hat**2 + B_g3_hat**2),
+            M_hat = np.vstack(
+                [
+                    self.imu1.a - base_ddq_wheels,
+                    self.imu2.a - base_ddq_wheels,
+                    self.imu3.a - base_ddq_wheels,
+                    self.imu4.a - base_ddq_wheels,
+                ]
             )
-            q2_A_hat = np.arctan2(-B_g1_hat, B_g3_hat)
+            M = np.linalg.pinv(self.P) @ M_hat
+            B_g_hat = -M[0]
+            self.q1_A_hat, self.q2_A_hat = accelerometer_attitude_from_gravity(B_g_hat)
 
         #   一阶互补滤波融合陀螺仪和加速度计的估计
-            self.alpha = 0.5
-            q = self.alpha*np.array([q1_A_hat, q2_A_hat])+(1-self.alpha)*np.array([self.q1_gy_hat, self.q2_gy_hat])
+            q = self.alpha * np.array([self.q1_A_hat, self.q2_A_hat]) + (
+                1 - self.alpha
+            ) * np.array([self.q1_gy_hat, self.q2_gy_hat])
             print(f"q={q}")
+
+            if self.loop_rate > 0:
+                time.sleep(1.0 / self.loop_rate)
     
-
-
-    
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 def main() -> int:
+    config = config_section("estimator", "estimator")
+    shared_memory_name = config.get("shared_memory_name")
+    shared_memory_config = resolve_project_path(config.get("shared_memory_config"))
+    wheel_radius = float(config.get("wheel_radius", 0.0))
+    alpha = float(config.get("alpha", 0.5))
+    loop_rate = float(config.get("loop_rate", 50.0))
+    if shared_memory_name is not None and not isinstance(shared_memory_name, str):
+        raise ValueError("estimator.estimator.shared_memory_name must be a string or null.")
+    if shared_memory_config is None:
+        raise ValueError("estimator.estimator.shared_memory_config must be a path string.")
 
+    try:
+        estimator = Estimator(
+            shared_memory_name=shared_memory_name,
+            shared_memory_config=shared_memory_config,
+            wheel_radius=wheel_radius,
+            alpha=alpha,
+            loop_rate=loop_rate,
+        )
+    except FileNotFoundError as exc:
+        raise SystemExit(
+            "Shared memory is not available. Start the simulator first with:\n"
+            "  uv run python src/sim/launch_robot_scene.py"
+        ) from exc
 
-
-
-
-
-
-
-
+    try:
+        estimator.estimate(estimator.read_state())
+    except KeyboardInterrupt:
+        return 0
+    finally:
+        estimator.close()
     return 0
-
 
 if __name__ == "__main__":
     raise SystemExit(main())

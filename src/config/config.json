@@ -19,6 +19,13 @@
     }
   },
   "estimator": {
+    "estimator": {
+      "shared_memory_name": null,
+      "shared_memory_config": "src/sim/robot_shared_memory_config.json",
+      "wheel_radius": 0.09,
+      "alpha": 0.5,
+      "loop_rate": 50.0
+    },
     "pinocchio_example": {
       "urdf": "model/urdf/claptrap.urdf",
       "floating_base": false,

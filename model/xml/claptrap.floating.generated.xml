@@ -1,7 +1,8 @@
 <mujoco model="claptrap">
   <compiler angle="radian" />
   <worldbody>
-    <body name="floating_base" pos="0 0 0.35" quat="0.999048 0.043619 0 0">
+    <!-- 0.999048 0.043619 0 0 -->
+    <body name="floating_base" pos="0 0 0.35" quat="1 0 0 0">   
       <freejoint name="root_free" />
       <body name="base_footprint">
         <body name="base_link" pos="0 0 0.1">
