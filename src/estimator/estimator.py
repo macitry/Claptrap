@@ -129,6 +129,7 @@ class Estimator:
         self.q_gy_prev = np.zeros(3)
 
         self.dt = 0.01
+        self.prev_sim_time: float | None = None
         self.q1_gy_hat = 0.0
         self.q2_gy_hat = 0.0
         self.q1_A_hat = 0.0
@@ -166,14 +167,23 @@ class Estimator:
             imu.w = sensordata[offset + 4: offset + 7]
             imu.a = sensordata[offset + 7: offset + 10]
 
+    def update_dt_from_state(self, state: RobotState) -> None:
+        if self.prev_sim_time is None:
+            self.dt = state.timestep
+        else:
+            sim_dt = state.sim_time - self.prev_sim_time
+            self.dt = sim_dt if sim_dt > 0.0 else state.timestep
+        self.prev_sim_time = state.sim_time
+
     def estimate(self, state: RobotState | None = None) -> None:
         if state is not None:
             self.update_imus_from_state(state)
+            self.update_dt_from_state(state)
 
         while True:
             state = self.read_state()
             self.update_imus_from_state(state)
-            self.dt = state.timestep
+            self.update_dt_from_state(state)
             print(f"state={state}")
 
         #   基于四个IMU的平均角速度进行估计机体角度。
@@ -217,7 +227,12 @@ class Estimator:
             M = self.P_pinv @ M_hat
             B_g_hat = -M[0]
             self.q1_A_hat, self.q2_A_hat = accelerometer_attitude_from_gravity(B_g_hat)
+            if self.q2_A_hat < 2.0:
+                self.q1_gy_hat = 0.0
+                self.q2_gy_hat = 0.0
+                self.q_gy_prev[0:2] = 0.0
             print(f"q1_A_hat={self.q1_A_hat}, q2_A_hat={self.q2_A_hat}")
+
         #   一阶互补滤波融合陀螺仪和加速度计的估计
             q_hat = self.alpha * np.array([self.q1_A_hat, self.q2_A_hat]) + (
                 1 - self.alpha

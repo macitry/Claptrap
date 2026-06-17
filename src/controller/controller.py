@@ -37,6 +37,20 @@ def vector_from_config(value: object, *, default: list[float], name: str) -> np.
     return result
 
 
+def index_vector_from_config(
+    value: object,
+    *,
+    default: list[int],
+    name: str,
+) -> np.ndarray:
+    if value is None:
+        value = default
+    result = np.asarray(value, dtype=int)
+    if result.shape != (2,) or np.any(result < 0) or np.any(result > 1):
+        raise ValueError(f"controller.controller.{name} must contain 2 indices, 0 or 1.")
+    return result
+
+
 def clamp_vector(values: np.ndarray, limits: np.ndarray) -> np.ndarray:
     return np.clip(values, -limits, limits)
 
@@ -48,6 +62,7 @@ class PIDAttitudeController:
         shared_memory_name: str | None,
         shared_memory_config: Path,
         target_q: np.ndarray,
+        torque_q_indices: np.ndarray,
         gains: PIDGains,
         torque_limits: np.ndarray,
         integral_limits: np.ndarray,
@@ -58,6 +73,7 @@ class PIDAttitudeController:
             config_path=shared_memory_config,
         )
         self.target_q = target_q
+        self.torque_q_indices = torque_q_indices
         self.gains = gains
         self.torque_limits = torque_limits
         self.integral_limits = integral_limits
@@ -86,7 +102,9 @@ class PIDAttitudeController:
         else:
             dt = max(now - self.prev_time, 1e-6)
 
-        error = self.target_q - q_hat
+        q_control = q_hat[self.torque_q_indices]
+        target_control = self.target_q[self.torque_q_indices]
+        error = target_control - q_control
         self.error_integral += error * dt
         self.error_integral = clamp_vector(self.error_integral, self.integral_limits)
 
@@ -95,7 +113,7 @@ class PIDAttitudeController:
         else:
             error_derivative = (error - self.prev_error) / dt
 
-        torque = (
+        torque = -(
             self.gains.kp * error
             + self.gains.ki * self.error_integral
             + self.gains.kd * error_derivative
@@ -127,6 +145,11 @@ def main() -> int:
         raise ValueError("controller.controller.shared_memory_config must be a path string.")
 
     target_q = vector_from_config(config.get("target_q"), default=[0.0, 0.0], name="target_q")
+    torque_q_indices = index_vector_from_config(
+        config.get("torque_q_indices"),
+        default=[1, 0],
+        name="torque_q_indices",
+    )
     gains = PIDGains(
         kp=vector_from_config(config.get("kp"), default=[10.0, 10.0], name="kp"),
         ki=vector_from_config(config.get("ki"), default=[0.0, 0.0], name="ki"),
@@ -149,6 +172,7 @@ def main() -> int:
             shared_memory_name=shared_memory_name,
             shared_memory_config=shared_memory_config,
             target_q=target_q,
+            torque_q_indices=torque_q_indices,
             gains=gains,
             torque_limits=torque_limits,
             integral_limits=integral_limits,
