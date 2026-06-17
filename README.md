@@ -2,9 +2,9 @@
 
 Robot model and MuJoCo tooling for the Claptrap project.
 
-<video src="DisplayVideo.webm" controls muted loop playsinline width="100%"></video>
+![Claptrap demo](DisplayVideo.gif)
 
-[Watch the demo video](DisplayVideo.webm)
+[Watch the WebM demo](DisplayVideo.webm)
 
 ## Layout
 
