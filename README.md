@@ -2,6 +2,10 @@
 
 Robot model and MuJoCo tooling for the Claptrap project.
 
+<video src="DisplayVideo.webm" controls muted loop playsinline width="100%"></video>
+
+[Watch the demo video](DisplayVideo.webm)
+
 ## Layout
 
 - `model/urdf/`: URDF source models
