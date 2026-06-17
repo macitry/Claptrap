@@ -19,18 +19,20 @@ DEFAULT_SHM_NAME = "robot_mujoco_io"
 COMMAND_MODE_TORQUE = 0
 
 MAGIC = b"ROBOTIO\0"
-VERSION = 2
+VERSION = 3
 DOUBLE_SIZE = 8
 SUPPORTED_DTYPE = "float64"
 
 COMMON_HEADER_STRUCT = struct.Struct("<8sIIQIIIIQ")
 STATE_HEADER_STRUCT = struct.Struct("<QIIddd")
 COMMAND_HEADER_STRUCT = struct.Struct("<QIId")
+ESTIMATOR_HEADER_STRUCT = struct.Struct("<Qd")
 
 COMMON_HEADER_OFFSET = 0
 STATE_HEADER_OFFSET = COMMON_HEADER_OFFSET + COMMON_HEADER_STRUCT.size
 COMMAND_HEADER_OFFSET = STATE_HEADER_OFFSET + STATE_HEADER_STRUCT.size
-ARRAYS_OFFSET = COMMAND_HEADER_OFFSET + COMMAND_HEADER_STRUCT.size
+ESTIMATOR_HEADER_OFFSET = COMMAND_HEADER_OFFSET + COMMAND_HEADER_STRUCT.size
+ARRAYS_OFFSET = ESTIMATOR_HEADER_OFFSET + ESTIMATOR_HEADER_STRUCT.size
 
 TRACK_PARAMETER_SUPPORTED = "track" in inspect.signature(
     shared_memory.SharedMemory
@@ -96,6 +98,7 @@ class SharedMemoryConfig:
     shared_memory_name: str
     state_fields: tuple[FieldSpec, ...]
     command_fields: tuple[FieldSpec, ...]
+    estimator_fields: tuple[FieldSpec, ...]
     fingerprint: int
 
     @classmethod
@@ -109,13 +112,16 @@ class SharedMemoryConfig:
 
         state_fields = _load_field_specs(raw, "state_fields")
         command_fields = _load_field_specs(raw, "command_fields")
+        estimator_fields = _load_field_specs(raw, "estimator_fields", required=False)
         _validate_unique_names(state_fields, "state_fields")
         _validate_unique_names(command_fields, "command_fields")
+        _validate_unique_names(estimator_fields, "estimator_fields")
 
         normalized = {
             "shared_memory_name": shared_memory_name,
             "state_fields": [field.__dict__ for field in state_fields],
             "command_fields": [field.__dict__ for field in command_fields],
+            "estimator_fields": [field.__dict__ for field in estimator_fields],
         }
         digest = hashlib.sha256(
             json.dumps(normalized, sort_keys=True, separators=(",", ":")).encode(
@@ -128,6 +134,7 @@ class SharedMemoryConfig:
             shared_memory_name=shared_memory_name,
             state_fields=tuple(state_fields),
             command_fields=tuple(command_fields),
+            estimator_fields=tuple(estimator_fields),
             fingerprint=fingerprint,
         )
 
@@ -142,6 +149,7 @@ class SharedMemoryHeader:
     nsensordata: int
     state_seq: int
     command_seq: int
+    estimator_seq: int
     sim_alive: bool
     command_enabled: bool
     command_mode: int
@@ -149,6 +157,7 @@ class SharedMemoryHeader:
     timestep: float
     state_wall_time: float
     command_wall_time: float
+    estimator_wall_time: float
 
 
 @dataclass(frozen=True)
@@ -176,6 +185,12 @@ class _CommandHeader:
 
 
 @dataclass(frozen=True)
+class _EstimatorHeader:
+    sequence: int
+    wall_time: float
+
+
+@dataclass(frozen=True)
 class FieldLayout:
     name: str
     offset: int
@@ -187,6 +202,7 @@ class SharedMemoryLayout:
     dimensions: ModelDimensions
     state_fields: dict[str, FieldLayout]
     command_fields: dict[str, FieldLayout]
+    estimator_fields: dict[str, FieldLayout]
     total_size: int
 
     @classmethod
@@ -198,6 +214,7 @@ class SharedMemoryLayout:
         offset = ARRAYS_OFFSET
         state_fields: dict[str, FieldLayout] = {}
         command_fields: dict[str, FieldLayout] = {}
+        estimator_fields: dict[str, FieldLayout] = {}
 
         for field in config.state_fields:
             size = field.resolved_size(dimensions)
@@ -209,10 +226,16 @@ class SharedMemoryLayout:
             command_fields[field.name] = FieldLayout(field.name, offset, size)
             offset += size * DOUBLE_SIZE
 
+        for field in config.estimator_fields:
+            size = field.resolved_size(dimensions)
+            estimator_fields[field.name] = FieldLayout(field.name, offset, size)
+            offset += size * DOUBLE_SIZE
+
         return cls(
             dimensions=dimensions,
             state_fields=state_fields,
             command_fields=command_fields,
+            estimator_fields=estimator_fields,
             total_size=offset,
         )
 
@@ -248,8 +271,28 @@ class RobotCommand:
             raise AttributeError(name) from exc
 
 
-def _load_field_specs(raw: dict[str, Any], key: str) -> tuple[FieldSpec, ...]:
+@dataclass(frozen=True)
+class RobotEstimate:
+    sequence: int
+    wall_time: float
+    fields: dict[str, list[float]]
+
+    def __getattr__(self, name: str) -> list[float]:
+        try:
+            return self.fields[name]
+        except KeyError as exc:
+            raise AttributeError(name) from exc
+
+
+def _load_field_specs(
+    raw: dict[str, Any],
+    key: str,
+    *,
+    required: bool = True,
+) -> tuple[FieldSpec, ...]:
     fields = raw.get(key)
+    if fields is None and not required:
+        return ()
     if not isinstance(fields, list):
         raise ValueError(f"{key} must be a list")
     return tuple(FieldSpec.from_json(field) for field in fields)
@@ -417,6 +460,7 @@ class RobotSharedMemory:
                 wall_time=now,
             )
         )
+        io._write_estimator_header(_EstimatorHeader(sequence=0, wall_time=now))
         io._zero_arrays()
         return io
 
@@ -602,6 +646,51 @@ class RobotSharedMemory:
             if time.monotonic() >= deadline:
                 raise TimeoutError("Timed out waiting for a stable command read")
 
+    def write_estimate(self, **fields: object) -> None:
+        field_values = self._validate_fields(
+            fields,
+            self.layout.estimator_fields,
+            "estimator",
+        )
+        estimator_header = self._read_estimator_header()
+        odd_seq = _next_odd_sequence(estimator_header.sequence)
+
+        self._write_estimator_header(replace(estimator_header, sequence=odd_seq))
+        for name, values in field_values.items():
+            self._pack_doubles(self.layout.estimator_fields[name].offset, values)
+        self._write_estimator_header(
+            _EstimatorHeader(
+                sequence=odd_seq + 1,
+                wall_time=time.time(),
+            )
+        )
+
+    def read_estimate(self, timeout: float = 1.0) -> RobotEstimate:
+        deadline = time.monotonic() + timeout
+        while True:
+            estimate_before = self._read_estimator_header()
+            if estimate_before.sequence % 2:
+                if time.monotonic() >= deadline:
+                    raise TimeoutError("Timed out waiting for a stable estimate write")
+                time.sleep(0)
+                continue
+
+            fields = self._read_fields(self.layout.estimator_fields)
+
+            estimate_after = self._read_estimator_header()
+            if (
+                estimate_before.sequence == estimate_after.sequence
+                and estimate_after.sequence % 2 == 0
+            ):
+                return RobotEstimate(
+                    sequence=estimate_after.sequence,
+                    wall_time=estimate_after.wall_time,
+                    fields=fields,
+                )
+
+            if time.monotonic() >= deadline:
+                raise TimeoutError("Timed out waiting for a stable estimate read")
+
     def close(self) -> None:
         self._shm.close()
 
@@ -676,6 +765,16 @@ class RobotSharedMemory:
             wall_time=values[3],
         )
 
+    @staticmethod
+    def _read_estimator_header_from(
+        shm: shared_memory.SharedMemory,
+    ) -> _EstimatorHeader:
+        values = ESTIMATOR_HEADER_STRUCT.unpack_from(shm.buf, ESTIMATOR_HEADER_OFFSET)
+        return _EstimatorHeader(
+            sequence=values[0],
+            wall_time=values[1],
+        )
+
     @classmethod
     def _read_header_from(
         cls,
@@ -684,6 +783,7 @@ class RobotSharedMemory:
         common = cls._read_common_header_from(shm)
         state = cls._read_state_header_from(shm)
         command = cls._read_command_header_from(shm)
+        estimator = cls._read_estimator_header_from(shm)
         return SharedMemoryHeader(
             total_size=common.total_size,
             config_fingerprint=common.config_fingerprint,
@@ -693,6 +793,7 @@ class RobotSharedMemory:
             nsensordata=common.dimensions.nsensordata,
             state_seq=state.sequence,
             command_seq=command.sequence,
+            estimator_seq=estimator.sequence,
             sim_alive=state.sim_alive,
             command_enabled=command.enabled,
             command_mode=command.mode,
@@ -700,6 +801,7 @@ class RobotSharedMemory:
             timestep=state.timestep,
             state_wall_time=state.wall_time,
             command_wall_time=command.wall_time,
+            estimator_wall_time=estimator.wall_time,
         )
 
     def _read_header(self) -> SharedMemoryHeader:
@@ -710,6 +812,9 @@ class RobotSharedMemory:
 
     def _read_command_header(self) -> _CommandHeader:
         return self._read_command_header_from(self._shm)
+
+    def _read_estimator_header(self) -> _EstimatorHeader:
+        return self._read_estimator_header_from(self._shm)
 
     def _write_common_header(self, header: _CommonHeader) -> None:
         COMMON_HEADER_STRUCT.pack_into(
@@ -745,6 +850,14 @@ class RobotSharedMemory:
             int(header.sequence),
             int(bool(header.enabled)),
             int(header.mode),
+            float(header.wall_time),
+        )
+
+    def _write_estimator_header(self, header: _EstimatorHeader) -> None:
+        ESTIMATOR_HEADER_STRUCT.pack_into(
+            self._shm.buf,
+            ESTIMATOR_HEADER_OFFSET,
+            int(header.sequence),
             float(header.wall_time),
         )
 

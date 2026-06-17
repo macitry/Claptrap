@@ -83,6 +83,18 @@ def accelerometer_attitude_from_gravity(B_g_hat: np.ndarray) -> tuple[float, flo
     return q1_A_hat, q2_A_hat
 
 
+def imu_positions_from_config(value: object | None) -> np.ndarray:
+    if value is None:
+        return np.zeros((4, 3))
+
+    positions = np.asarray(value, dtype=float)
+    if positions.shape != (4, 3):
+        raise ValueError(
+            "estimator.estimator.imu_positions_in_base must be a 4x3 list."
+        )
+    return positions
+
+
 class Estimator:
     def __init__(
         self,
@@ -90,6 +102,7 @@ class Estimator:
         shared_memory_name: str | None = None,
         shared_memory_config: Path,
         wheel_radius: float = 0.0,
+        imu_positions_in_base: object | None = None,
         alpha: float = 0.5,
         loop_rate: float = 50.0,
     ):
@@ -110,6 +123,7 @@ class Estimator:
         self.imu4 = IMU()
         self.imu4.w = np.zeros(3)
         self.imu4.a = np.zeros(3)
+        self.imus = [self.imu1, self.imu2, self.imu3, self.imu4]
 
         self.q_prev = np.zeros(3)
         self.q_gy_prev = np.zeros(3)
@@ -125,19 +139,14 @@ class Estimator:
         self.w_wheels = np.zeros(3)
         self.r = float(wheel_radius)
 
-        self.imu1.B_p_w = np.zeros(3)
-        self.imu2.B_p_w = np.zeros(3)
-        self.imu3.B_p_w = np.zeros(3)
-        self.imu4.B_p_w = np.zeros(3)
+        imu_positions = imu_positions_from_config(imu_positions_in_base)
+        for imu, position in zip(self.imus, imu_positions):
+            imu.B_p_w = position
 
         self.P = np.vstack(
-            [
-                np.r_[1.0, self.imu1.B_p_w],
-                np.r_[1.0, self.imu2.B_p_w],
-                np.r_[1.0, self.imu3.B_p_w],
-                np.r_[1.0, self.imu4.B_p_w],
-            ]
+            [np.r_[1.0, imu.B_p_w] for imu in self.imus]
         )
+        self.P_pinv = np.linalg.pinv(self.P)
 
     def close(self) -> None:
         self.shared_memory.close()
@@ -147,16 +156,15 @@ class Estimator:
 
     def update_imus_from_state(self, state: RobotState) -> None:
         sensordata = np.asarray(state.sensordata, dtype=float)
-        imus = [self.imu1, self.imu2, self.imu3, self.imu4]
         values_per_imu = 10  # framequat(4) + gyro(3) + accelerometer(3)
-        expected_size = len(imus) * values_per_imu
+        expected_size = len(self.imus) * values_per_imu
         if sensordata.size < expected_size:
             return
 
-        for index, imu in enumerate(imus):
+        for index, imu in enumerate(self.imus):
             offset = index * values_per_imu
-            imu.w = sensordata[offset + 4 : offset + 7]
-            imu.a = sensordata[offset + 7 : offset + 10]
+            imu.w = sensordata[offset + 4: offset + 7]
+            imu.a = sensordata[offset + 7: offset + 10]
 
     def estimate(self, state: RobotState | None = None) -> None:
         if state is not None:
@@ -189,6 +197,7 @@ class Estimator:
             self.q_gy_prev = self.q_gy_prev + qdot_g * self.dt
             self.q1_gy_hat = self.q_gy_prev[0]
             self.q2_gy_hat = self.q_gy_prev[1]
+            print(f"q_gy_prev=({self.q_gy_prev})") # TODO:注意此处的计算的方向
 
         #   基于加速度计的重力方向估计机体角度.
 
@@ -205,15 +214,16 @@ class Estimator:
                     self.imu4.a - base_ddq_wheels,
                 ]
             )
-            M = np.linalg.pinv(self.P) @ M_hat
+            M = self.P_pinv @ M_hat
             B_g_hat = -M[0]
             self.q1_A_hat, self.q2_A_hat = accelerometer_attitude_from_gravity(B_g_hat)
-
+            print(f"q1_A_hat={self.q1_A_hat}, q2_A_hat={self.q2_A_hat}")
         #   一阶互补滤波融合陀螺仪和加速度计的估计
-            q = self.alpha * np.array([self.q1_A_hat, self.q2_A_hat]) + (
+            q_hat = self.alpha * np.array([self.q1_A_hat, self.q2_A_hat]) + (
                 1 - self.alpha
             ) * np.array([self.q1_gy_hat, self.q2_gy_hat])
-            print(f"q={q}")
+            self.shared_memory.write_estimate(q_hat=q_hat)
+            print(f"q_hat={q_hat}")
 
             if self.loop_rate > 0:
                 time.sleep(1.0 / self.loop_rate)
@@ -224,6 +234,7 @@ def main() -> int:
     shared_memory_name = config.get("shared_memory_name")
     shared_memory_config = resolve_project_path(config.get("shared_memory_config"))
     wheel_radius = float(config.get("wheel_radius", 0.0))
+    imu_positions_in_base = config.get("imu_positions_in_base")
     alpha = float(config.get("alpha", 0.5))
     loop_rate = float(config.get("loop_rate", 50.0))
     if shared_memory_name is not None and not isinstance(shared_memory_name, str):
@@ -236,6 +247,7 @@ def main() -> int:
             shared_memory_name=shared_memory_name,
             shared_memory_config=shared_memory_config,
             wheel_radius=wheel_radius,
+            imu_positions_in_base=imu_positions_in_base,
             alpha=alpha,
             loop_rate=loop_rate,
         )

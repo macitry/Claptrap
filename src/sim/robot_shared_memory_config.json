@@ -33,5 +33,12 @@
       "dtype": "float64",
       "size": "nu"
     }
+  ],
+  "estimator_fields": [
+    {
+      "name": "q_hat",
+      "dtype": "float64",
+      "size": 2
+    }
   ]
 }
